@@ -69,6 +69,12 @@ void Error_Handler(void);
 #define LD2_GPIO_Port GPIOA
 #define DE_RE_Output_Pin GPIO_PIN_12
 #define DE_RE_Output_GPIO_Port GPIOB
+#define ALARM_COMMUNICATION_Pin GPIO_PIN_13
+#define ALARM_COMMUNICATION_GPIO_Port GPIOB
+#define ALARM_MEASUREMENT_Pin GPIO_PIN_14
+#define ALARM_MEASUREMENT_GPIO_Port GPIOB
+#define ALARM_NORMAL_Pin GPIO_PIN_15
+#define ALARM_NORMAL_GPIO_Port GPIOB
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
