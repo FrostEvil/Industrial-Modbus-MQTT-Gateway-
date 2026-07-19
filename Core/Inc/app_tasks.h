@@ -1,0 +1,15 @@
+/*
+ * app_tasks.h
+ *
+ *  Created on: Jul 15, 2026
+ *      Author: tomas
+ */
+
+#ifndef INC_APP_TASKS_H_
+#define INC_APP_TASKS_H_
+
+#include "FreeRTOS.h"
+#include "task.h"
+
+void AppTasksInit(void);
+#endif /* INC_APP_TASKS_H_ */
