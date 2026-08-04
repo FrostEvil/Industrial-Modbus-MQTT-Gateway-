@@ -33,19 +33,19 @@ static uint8_t modbus_rx_data[256];
 static char pc_tx_buffer[64];
 static uint8_t dropped_measurements = 0;
 
-MeasurementMessage_t measurement_message;
+MeasurementRecord_t measurement_record;
 
 static void modbus_parse_measurements(uint8_t *frame) {
 
-	measurement_message.voltage = (float) ((frame[3] << 8) | frame[4]) / 10.0f;
-	measurement_message.current = (float) ((frame[5] << 8) | frame[6]) / 10.0f;
-	measurement_message.temperature = (float) ((frame[7] << 8) | frame[8])
+	measurement_record.voltage = (float) ((frame[3] << 8) | frame[4]) / 10.0f;
+	measurement_record.current = (float) ((frame[5] << 8) | frame[6]) / 10.0f;
+	measurement_record.temperature = (float) ((frame[7] << 8) | frame[8])
 			/ 10.0f;
 
 	snprintf(pc_tx_buffer, sizeof(pc_tx_buffer),
 			"Voltage:%.1fV, Current:%.1fA, Temperature:%.1fC\r\n",
-			measurement_message.voltage, measurement_message.current,
-			measurement_message.temperature);
+			measurement_record.voltage, measurement_record.current,
+			measurement_record.temperature);
 	HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer, strlen(pc_tx_buffer),
 	HAL_MAX_DELAY);
 }
@@ -94,9 +94,9 @@ static void modbus_result(ModbusStatus_t modbus_master_poll_status,
 	}
 
 	if (modbus_master_poll_status != MODBUS_OK) {
-		measurement_message.voltage = 0;
-		measurement_message.current = 0;
-		measurement_message.temperature = 0;
+		measurement_record.voltage = 0;
+		measurement_record.current = 0;
+		measurement_record.temperature = 0;
 		HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
 				strlen(pc_tx_buffer), HAL_MAX_DELAY);
 	}
@@ -133,10 +133,10 @@ void ModbusPollerTask(void *argument) {
 				&modbus_target, &modbus_retry_policy, &exception_code);
 		modbus_result(modbus_master_poll_status, exception_code);
 
-		measurement_message.status = modbus_master_poll_status;
-		xQueueOverwrite(modbusToAlarmQueue, &measurement_message);
-		xQueueOverwrite(modbusToMqttQueue, &measurement_message);
-		if (xQueueSend(modbusToFlashLoggerQueue, &measurement_message,
+		measurement_record.status = modbus_master_poll_status;
+		xQueueOverwrite(modbusToAlarmQueue, &measurement_record);
+		xQueueOverwrite(modbusToMqttQueue, &measurement_record);
+		if (xQueueSend(modbusToFlashLoggerQueue, &measurement_record,
 				pdMS_TO_TICKS(100)) != pdPASS) {
 			dropped_measurements++;
 

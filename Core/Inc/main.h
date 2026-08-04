@@ -83,6 +83,8 @@ void Error_Handler(void);
 #define ALARM_MEASUREMENT_GPIO_Port GPIOB
 #define ALARM_NORMAL_Pin GPIO_PIN_15
 #define ALARM_NORMAL_GPIO_Port GPIOB
+#define ALARM_STORAGE_FAULT_Pin GPIO_PIN_6
+#define ALARM_STORAGE_FAULT_GPIO_Port GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14

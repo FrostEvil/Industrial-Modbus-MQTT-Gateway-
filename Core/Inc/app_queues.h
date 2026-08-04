@@ -12,7 +12,6 @@
 #include "queue.h"
 #include "modbus_protocol.h"
 
-
 /**
  * @brief One measurement cycle's result, passed from Modbus Poller to
  *        any task that needs to react to it (currently: Alarm Manager).
@@ -26,9 +25,7 @@ typedef struct {
 	float current;
 	float temperature;
 	ModbusStatus_t status;
-} MeasurementMessage_t;
-
-
+} MeasurementRecord_t;
 
 // Handle used by both the sender (Modbus Poller) and the receiver
 // (Alarm Manager) to refer to this specific queue.
@@ -36,6 +33,7 @@ extern QueueHandle_t modbusToAlarmQueue;
 extern QueueHandle_t modbusToFlashLoggerQueue;
 extern QueueHandle_t modbusToMqttQueue;
 extern QueueHandle_t alarmToMqttQueue;
+extern QueueHandle_t flashToAlarmQueue;
 /**
  * @brief Creates all inter-task queues. Must be called once, from main(),
  *        before osKernelStart() - same timing rule as AppTaskInit().

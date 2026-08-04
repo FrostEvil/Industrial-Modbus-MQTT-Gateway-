@@ -11,6 +11,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "flash_logger_task.h"
 
 #define VOLTAGE_MIN 207
 #define VOLTAGE_MAX 253
@@ -64,7 +65,7 @@ static MeasurementRangeStatus_t update_measurement_status(
 	return current_status;
 }
 
-static void validate_measurements(MeasurementMessage_t *measurement_message,
+static void validate_measurements(MeasurementRecord_t *measurement_message,
 		AlarmState_t *alarm_state, MeasurementStatus_t *measurement_status) {
 
 	if (measurement_message->status == MODBUS_OK) {
@@ -132,22 +133,37 @@ static void update_alarm_led(AlarmState_t alarm_state) {
 }
 
 void AlarmManagerTask(void *argument) {
-	MeasurementMessage_t measurement_message;
+	MeasurementRecord_t measurement_record;
 	MeasurementStatus_t measurement_status =
 			{ .voltage = MEASUREMENT_IN_RANGE, .current = MEASUREMENT_IN_RANGE,
 					.temperature = MEASUREMENT_IN_RANGE };
 	AlarmState_t alarm_state = ALARM_NORMAL;
+	FlashLoggerAlarmFault_t alarm_fault = ALARM_OK;
 
 	for (;;) {
-		xQueueReceive(modbusToAlarmQueue, &measurement_message, portMAX_DELAY);
-		validate_measurements(&measurement_message, &alarm_state,
-				&measurement_status);
+	    if (xQueueReceive(flashToAlarmQueue, &alarm_fault,
+	            pdMS_TO_TICKS(100)) == pdTRUE) {
 
-		if (alarm_state != ALARM_NORMAL) {
-			xQueueOverwrite(alarmToMqttQueue, &alarm_state);
-		}
+	        if (alarm_fault == STORAGE_FAULT) {
+	            HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
+	            ALARM_STORAGE_FAULT_Pin, GPIO_PIN_SET);
+	        }
+	    }
 
-		update_alarm_led(alarm_state);
+	    xQueueReceive(modbusToAlarmQueue, &measurement_record,
+	    portMAX_DELAY);
+	    validate_measurements(&measurement_record, &alarm_state,
+	            &measurement_status);
+
+	    if (alarm_fault == COMMUNICATION_FAULT) {
+	        alarm_state = ALARM_COMMUNICATION;
+	    }
+
+	    if (alarm_state != ALARM_NORMAL) {
+	        xQueueOverwrite(alarmToMqttQueue, &alarm_state);
+	    }
+
+	    update_alarm_led(alarm_state);
 	}
 }
 

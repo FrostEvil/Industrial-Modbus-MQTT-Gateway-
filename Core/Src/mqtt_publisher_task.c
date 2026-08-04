@@ -34,7 +34,7 @@ static void SendAlarmMessage(AlarmState_t alarm_state) {
 }
 
 void MqttPublisherTask(void *argument) {
-	MeasurementMessage_t measurement_message;
+	MeasurementRecord_t measurement_record;
 	AlarmState_t alarm_state;
 	const char message[] = "Publication of data\r\n";
 
@@ -45,7 +45,7 @@ void MqttPublisherTask(void *argument) {
 			SendAlarmMessage(alarm_state);
 
 		}
-		xQueueReceive(modbusToMqttQueue, &measurement_message,
+		xQueueReceive(modbusToMqttQueue, &measurement_record,
 		portMAX_DELAY);
 
 		HAL_UART_Transmit(&huart2, (uint8_t*) message, strlen(message),
