@@ -21,7 +21,7 @@ static StackType_t flashLoggerTaskStack[FLASH_LOGGER_TASK_STACK_SIZE];
 static StaticTask_t flashLoggerTaskTCB;
 
 void FlashLoggerTask(void *argument) {
-	MeasurementRecord_t measurement_record;
+	FlashRecord_t flash_record;
 	EntryRecordAddress_t flash_log_address;
 	EntryRecordAddress_t measurement_record_address;
 	FlashStatus_t flash_status;
@@ -36,11 +36,11 @@ void FlashLoggerTask(void *argument) {
 	}
 
 	for (;;) {
-		xQueueReceive(modbusToFlashLoggerQueue, &measurement_record,
+		xQueueReceive(alarmToFlashQueue, &flash_record,
 		portMAX_DELAY);
 
 		if (alarm_fault != STORAGE_FAULT) {
-			flash_status = flash_logger_write_record(&measurement_record,
+			flash_status = flash_logger_write_record(&flash_record,
 					&flash_log_address, &measurement_record_address);
 
 			if (flash_status == FLASH_STATUS_TIMEOUT

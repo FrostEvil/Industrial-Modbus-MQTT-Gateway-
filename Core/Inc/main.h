@@ -37,13 +37,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-typedef struct {
-	float voltage;
-	float current;
-	float temperature;
-	uint32_t timestamp_ms;
-	uint16_t crc;
-} FlashRecord_t;
+
 
 /* USER CODE END ET */
 

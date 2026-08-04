@@ -106,7 +106,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
 	char uart_message[128];
-	FlashStatus_t flash_status;
+//	FlashStatus_t flash_status;
 	uint32_t address = 0xFFDDAA;
 //	flash_status = search_writing_sector(&address);
 //	FlashJedecId_t jedec_id;

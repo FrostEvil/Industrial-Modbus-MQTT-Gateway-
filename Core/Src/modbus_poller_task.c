@@ -31,7 +31,6 @@ static uint8_t modbus_tx_buffer_size = 8;
 static uint8_t modbus_tx_buffer[8];
 static uint8_t modbus_rx_data[256];
 static char pc_tx_buffer[64];
-static uint8_t dropped_measurements = 0;
 
 MeasurementRecord_t measurement_record;
 
@@ -50,7 +49,7 @@ static void modbus_parse_measurements(uint8_t *frame) {
 	HAL_MAX_DELAY);
 }
 
-static void modbus_result(ModbusStatus_t modbus_master_poll_status,
+static void modbus_result(const ModbusStatus_t modbus_master_poll_status,
 		uint8_t exception_code) {
 
 	switch (modbus_master_poll_status) {
@@ -131,21 +130,12 @@ void ModbusPollerTask(void *argument) {
 		ModbusStatus_t modbus_master_poll_status = modbus_master_poll(
 				modbus_tx_buffer, modbus_tx_buffer_size, modbus_rx_data,
 				&modbus_target, &modbus_retry_policy, &exception_code);
+
 		modbus_result(modbus_master_poll_status, exception_code);
 
 		measurement_record.status = modbus_master_poll_status;
 		xQueueOverwrite(modbusToAlarmQueue, &measurement_record);
 		xQueueOverwrite(modbusToMqttQueue, &measurement_record);
-		if (xQueueSend(modbusToFlashLoggerQueue, &measurement_record,
-				pdMS_TO_TICKS(100)) != pdPASS) {
-			dropped_measurements++;
-
-			snprintf(pc_tx_buffer, sizeof(pc_tx_buffer),
-					"Dropped measurements: %d\r\n", dropped_measurements);
-			HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
-					strlen(pc_tx_buffer),
-					HAL_MAX_DELAY);
-		}
 
 		vTaskDelayUntil(&lastWakeTime,
 				pdMS_TO_TICKS(modbus_retry_policy.poll_period_ms));

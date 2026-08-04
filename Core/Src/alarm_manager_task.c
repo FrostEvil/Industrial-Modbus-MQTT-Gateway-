@@ -94,6 +94,22 @@ static void validate_measurements(MeasurementRecord_t *measurement_message,
 	}
 }
 
+static void validate_measurement_status(
+		const MeasurementStatus_t *measurement_status,
+		MeasurementStatus_t *prev_measurement_status,
+		uint8_t *is_status_changed) {
+
+	if (measurement_status->voltage != prev_measurement_status->voltage
+			|| measurement_status->current != prev_measurement_status->current
+			|| measurement_status->temperature
+					!= prev_measurement_status->temperature) {
+		*is_status_changed = 1;
+	}
+	prev_measurement_status->voltage = measurement_status->voltage;
+	prev_measurement_status->current = measurement_status->current;
+	prev_measurement_status->temperature = measurement_status->temperature;
+}
+
 static void update_alarm_led(AlarmState_t alarm_state) {
 	switch (alarm_state) {
 	case ALARM_NORMAL:
@@ -134,36 +150,67 @@ static void update_alarm_led(AlarmState_t alarm_state) {
 
 void AlarmManagerTask(void *argument) {
 	MeasurementRecord_t measurement_record;
+	MeasurementStatus_t prev_measurement_status = { .voltage =
+			MEASUREMENT_IN_RANGE, .current = MEASUREMENT_IN_RANGE,
+			.temperature = MEASUREMENT_IN_RANGE };
 	MeasurementStatus_t measurement_status =
 			{ .voltage = MEASUREMENT_IN_RANGE, .current = MEASUREMENT_IN_RANGE,
 					.temperature = MEASUREMENT_IN_RANGE };
-	AlarmState_t alarm_state = ALARM_NORMAL;
-	FlashLoggerAlarmFault_t alarm_fault = ALARM_OK;
+	uint8_t is_measurement_status_changed = 0;
+
+	AlarmState_t measurement_alarm_state = ALARM_NORMAL;
+	FlashLoggerAlarmFault_t flash_logger_alarm_fault = ALARM_OK;
+
+	uint8_t dropped_measurements = 0;
 
 	for (;;) {
-	    if (xQueueReceive(flashToAlarmQueue, &alarm_fault,
-	            pdMS_TO_TICKS(100)) == pdTRUE) {
 
-	        if (alarm_fault == STORAGE_FAULT) {
-	            HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
-	            ALARM_STORAGE_FAULT_Pin, GPIO_PIN_SET);
-	        }
-	    }
+		FlashRecord_t flash_record;
 
-	    xQueueReceive(modbusToAlarmQueue, &measurement_record,
-	    portMAX_DELAY);
-	    validate_measurements(&measurement_record, &alarm_state,
-	            &measurement_status);
+		if (xQueueReceive(flashToAlarmQueue, &flash_logger_alarm_fault,
+				pdMS_TO_TICKS(100)) == pdTRUE) {
 
-	    if (alarm_fault == COMMUNICATION_FAULT) {
-	        alarm_state = ALARM_COMMUNICATION;
-	    }
+			if (flash_logger_alarm_fault == STORAGE_FAULT) {
+				HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
+				ALARM_STORAGE_FAULT_Pin, GPIO_PIN_SET);
+			}
+		}
 
-	    if (alarm_state != ALARM_NORMAL) {
-	        xQueueOverwrite(alarmToMqttQueue, &alarm_state);
-	    }
+		xQueueReceive(modbusToAlarmQueue, &measurement_record,
+		portMAX_DELAY);
 
-	    update_alarm_led(alarm_state);
+		flash_record.timestamp_ms = xTaskGetTickCount();
+		flash_record.voltage = measurement_record.voltage;
+		flash_record.current = measurement_record.current;
+		flash_record.temperature = measurement_record.temperature;
+		flash_record.crc = modbus_crc16((uint8_t*) &flash_record,
+				offsetof(FlashRecord_t, crc));
+
+		validate_measurements(&measurement_record, &measurement_alarm_state,
+				&measurement_status);
+
+		validate_measurement_status(&measurement_status,
+				&prev_measurement_status, &is_measurement_status_changed);
+
+		if (is_measurement_status_changed) {
+
+			if (xQueueSend(alarmToFlashQueue, &flash_record,
+					pdMS_TO_TICKS(100)) != pdPASS) {
+				dropped_measurements++;
+
+			}
+		}
+
+		if (flash_logger_alarm_fault == COMMUNICATION_FAULT) {
+			measurement_alarm_state = ALARM_COMMUNICATION;
+		}
+
+		if (measurement_alarm_state != ALARM_NORMAL) {
+			xQueueOverwrite(alarmToMqttQueue, &measurement_alarm_state);
+		}
+
+		update_alarm_led(measurement_alarm_state);
+		is_measurement_status_changed = 0;
 	}
 }
 

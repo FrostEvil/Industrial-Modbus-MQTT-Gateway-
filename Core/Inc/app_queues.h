@@ -30,9 +30,9 @@ typedef struct {
 // Handle used by both the sender (Modbus Poller) and the receiver
 // (Alarm Manager) to refer to this specific queue.
 extern QueueHandle_t modbusToAlarmQueue;
-extern QueueHandle_t modbusToFlashLoggerQueue;
 extern QueueHandle_t modbusToMqttQueue;
 extern QueueHandle_t alarmToMqttQueue;
+extern QueueHandle_t alarmToFlashQueue;
 extern QueueHandle_t flashToAlarmQueue;
 /**
  * @brief Creates all inter-task queues. Must be called once, from main(),
