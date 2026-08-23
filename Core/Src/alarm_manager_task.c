@@ -12,6 +12,7 @@
 #include "task.h"
 #include "queue.h"
 #include "flash_logger_task.h"
+#include <string.h>
 
 #define VOLTAGE_MIN 207
 #define VOLTAGE_MAX 253
@@ -97,14 +98,24 @@ static void validate_measurements(MeasurementRecord_t *measurement_message,
 static void validate_measurement_status(
 		const MeasurementStatus_t *measurement_status,
 		MeasurementStatus_t *prev_measurement_status,
-		uint8_t *is_status_changed) {
+		uint8_t *is_status_changed, uint8_t *trigger_channel) {
 
-	if (measurement_status->voltage != prev_measurement_status->voltage
-			|| measurement_status->current != prev_measurement_status->current
-			|| measurement_status->temperature
-					!= prev_measurement_status->temperature) {
+	if (measurement_status->voltage != prev_measurement_status->voltage) {
+		*trigger_channel |= 0x01;
 		*is_status_changed = 1;
 	}
+
+	if (measurement_status->current != prev_measurement_status->current) {
+		*trigger_channel |= 0x02;
+		*is_status_changed = 1;
+	}
+
+	if (measurement_status->temperature
+			!= prev_measurement_status->temperature) {
+		*trigger_channel |= 0x04;
+		*is_status_changed = 1;
+	}
+
 	prev_measurement_status->voltage = measurement_status->voltage;
 	prev_measurement_status->current = measurement_status->current;
 	prev_measurement_status->temperature = measurement_status->temperature;
@@ -179,23 +190,28 @@ void AlarmManagerTask(void *argument) {
 		xQueueReceive(modbusToAlarmQueue, &measurement_record,
 		portMAX_DELAY);
 
+		//wypełnienie 0x00 - kontrolowany padding.
+		memset(&flash_record, 0, sizeof(FlashRecord_t));
+
 		flash_record.timestamp_ms = xTaskGetTickCount();
 		flash_record.voltage = measurement_record.voltage;
 		flash_record.current = measurement_record.current;
 		flash_record.temperature = measurement_record.temperature;
 		flash_record.crc = modbus_crc16((uint8_t*) &flash_record,
 				offsetof(FlashRecord_t, crc));
+		flash_record.trigger_channel = 0x00;
 
 		validate_measurements(&measurement_record, &measurement_alarm_state,
 				&measurement_status);
 
 		validate_measurement_status(&measurement_status,
-				&prev_measurement_status, &is_measurement_status_changed);
+				&prev_measurement_status, &is_measurement_status_changed,
+				&flash_record.trigger_channel);
 
 		if (is_measurement_status_changed) {
 
 			if (xQueueSend(alarmToFlashQueue, &flash_record,
-					pdMS_TO_TICKS(100)) != pdPASS) {
+					pdMS_TO_TICKS(1000)) != pdPASS) {
 				dropped_measurements++;
 
 			}

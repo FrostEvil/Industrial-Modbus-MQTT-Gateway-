@@ -23,7 +23,7 @@ static ModbusTarget_t modbus_target = { .slave_id = 0x01, .function_code = 0x03,
 		.register_start_hi = 0x00, .register_start_lo = 0x00,
 		.register_count_hi = 0x00, .register_count_lo = 0x03 };
 
-static ModbusRetryPolicy_t modbus_retry_policy = { .poll_period_ms = 5000,
+static ModbusRetryPolicy_t modbus_retry_policy = { .poll_period_ms = 1000,
 		.response_timeout_ms = 200, .max_attempts = 3 };
 
 static uint8_t modbus_request_payload[6];
@@ -41,12 +41,13 @@ static void modbus_parse_measurements(uint8_t *frame) {
 	measurement_record.temperature = (float) ((frame[7] << 8) | frame[8])
 			/ 10.0f;
 
+	// Wysyłanie pomiaru do PC
 	snprintf(pc_tx_buffer, sizeof(pc_tx_buffer),
 			"Voltage:%.1fV, Current:%.1fA, Temperature:%.1fC\r\n",
 			measurement_record.voltage, measurement_record.current,
 			measurement_record.temperature);
-	HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer, strlen(pc_tx_buffer),
-	HAL_MAX_DELAY);
+//	HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer, strlen(pc_tx_buffer),
+//	HAL_MAX_DELAY);
 }
 
 static void modbus_result(const ModbusStatus_t modbus_master_poll_status,
@@ -96,8 +97,8 @@ static void modbus_result(const ModbusStatus_t modbus_master_poll_status,
 		measurement_record.voltage = 0;
 		measurement_record.current = 0;
 		measurement_record.temperature = 0;
-		HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
-				strlen(pc_tx_buffer), HAL_MAX_DELAY);
+//		HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
+//				strlen(pc_tx_buffer), HAL_MAX_DELAY);
 	}
 }
 

@@ -100,27 +100,15 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
 	return status;
 }
 
-/**
- * @brief Called by HAL after every RX DMA event. RX DMA runs in Normal
- *        mode, not Circular (Circular + repeated re-arming of
- *        HAL_UARTEx_ReceiveToIdle_DMA had undocumented reliability issues
- *        observed during development - HAL_BUSY on re-arm, inconsistent
- *        buffer position across calls). In Normal mode, this fires either
- *        on a genuine Idle Line (slave finished a frame) or on Transfer
- *        Complete (the 256-byte buffer filled up without an idle gap -
- *        unexpected noise, not a valid Modbus response). Only IDLE is
- *        treated as a real frame; reception is re-armed unconditionally in
- *        both cases, since a Normal-mode transfer does not restart itself.
- */
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-	if (huart == &huart1) {
-		if (huart->RxEventType == HAL_UART_RXEVENT_IDLE) {
-			modbus_rx_size = Size;
-			modbus_rx_flag = 1;
-		}
-		HAL_UARTEx_ReceiveToIdle_DMA(&huart1, modbus_rx_buffer,
-				sizeof(modbus_rx_buffer));
+void modbus_rx_event(HAL_UART_RxEventTypeTypeDef event, uint16_t Size) {
+
+	if (event == HAL_UART_RXEVENT_IDLE) {
+		modbus_rx_size = Size;
+		modbus_rx_flag = 1;
 	}
+
+	HAL_UARTEx_ReceiveToIdle_DMA(&huart1, modbus_rx_buffer,
+			sizeof(modbus_rx_buffer));
 }
 
 /**

@@ -22,6 +22,7 @@
 #define INC_MODBUS_MASTER_H_
 
 #include "modbus_protocol.h"
+#include "usart.h"
 
 /**
  * @brief Identifies which slave and which registers a poll targets.
@@ -84,5 +85,7 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
 		uint8_t modbus_tx_buffer_size, uint8_t *modbus_rx_data,
 		const ModbusTarget_t *modbus_target,
 		const ModbusRetryPolicy_t *modbus_retry_policy, uint8_t *exception_code);
+
+void modbus_rx_event(HAL_UART_RxEventTypeTypeDef  event, uint16_t Size);
 
 #endif /* INC_MODBUS_MASTER_H_ */

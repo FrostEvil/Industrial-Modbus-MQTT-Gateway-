@@ -34,6 +34,8 @@ extern QueueHandle_t modbusToMqttQueue;
 extern QueueHandle_t alarmToMqttQueue;
 extern QueueHandle_t alarmToFlashQueue;
 extern QueueHandle_t flashToAlarmQueue;
+extern QueueHandle_t flashCommandQueue;
+extern QueueHandle_t flashQueueSet;
 /**
  * @brief Creates all inter-task queues. Must be called once, from main(),
  *        before osKernelStart() - same timing rule as AppTaskInit().
