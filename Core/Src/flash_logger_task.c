@@ -15,6 +15,8 @@
 #include "flash_logger.h"
 #include "flash_logger_task.h"
 
+#define STARTING_ADDRESS 0x000000
+
 TaskHandle_t flashLoggerTaskHandle;
 
 #define FLASH_LOGGER_TASK_STACK_SIZE 512
@@ -32,7 +34,6 @@ static void send_uart2_message(const char *message) {
 
 void FlashLoggerTask(void *argument) {
 	FlashRecord_t flash_record;
-	EntryRecordAddress_t flash_log_address = { 0 };
 	EntryRecordAddress_t measurement_record_address = { 0 };
 	FlashStatus_t flash_status;
 	uint8_t alarm_counter = 0;
@@ -42,8 +43,16 @@ void FlashLoggerTask(void *argument) {
 	FlashCommand_t flash_command;
 	uint8_t records_to_read = 0;
 
-	flash_status = flash_logger_init(&flash_log_address,
-			&measurement_record_address);
+	uint32_t start = xTaskGetTickCount();
+	flash_status = flash_logger_init(&measurement_record_address);
+	uint32_t elapsed_ms = xTaskGetTickCount() - start;
+
+	char message[64];
+
+	snprintf(message, sizeof(message), "Elapsed time: %lu ms\r\n",
+			(unsigned long) elapsed_ms);
+
+	send_uart2_message(message);
 
 	if (flash_status != FLASH_STATUS_OK) {
 		Error_Handler();
@@ -54,13 +63,13 @@ void FlashLoggerTask(void *argument) {
 		activeQueue = xQueueSelectFromSet(flashQueueSet, portMAX_DELAY);
 
 		if (activeQueue == alarmToFlashQueue) {
-			send_uart2_message("Alarm to FLASH!\r\n");
 
 			xQueueReceive(alarmToFlashQueue, &flash_record, 0);
 
 			if (alarm_fault != STORAGE_FAULT) {
+
 				flash_status = flash_logger_write_record(&flash_record,
-						&flash_log_address, &measurement_record_address);
+						&measurement_record_address);
 
 				if (flash_status == FLASH_STATUS_TIMEOUT
 						|| flash_status == FLASH_STATUS_SPI_ERROR
@@ -83,7 +92,29 @@ void FlashLoggerTask(void *argument) {
 						|| flash_status == FLASH_STATUS_LOG_CORRUPTED) {
 					alarm_fault = STORAGE_FAULT;
 					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
+				}
 
+				if (flash_status == FLASH_STATUS_FULL) {
+					/* Capacity genuinely exhausted, not a hardware/logic
+					 * fault -- but the position is frozen on the last,
+					 * already-written slot, so any further write attempt
+					 * here would corrupt it (NOR flash ANDs new data into
+					 * existing bytes rather than overwriting). Reusing
+					 * STORAGE_FAULT is the simplest way to guarantee no
+					 * further flash_logger_write_record() calls happen
+					 * until the user erases history -- if a distinct LED/
+					 * message ("full, needs erase" vs "hardware fault")
+					 * turns out to matter, split this into its own
+					 * FlashLoggerAlarmFault_t value later.
+					 *
+					 * TODO: decide the exact UX -- auto-erase on reaching
+					 * FULL, or warn well before it (e.g. ~90% capacity)
+					 * and let the user erase manually after reading out
+					 * the history first. */
+					alarm_fault = STORAGE_FAULT;
+					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
+					send_uart2_message(
+							"History FULL, you need to take action and erase flash history.\r\n");
 				}
 
 				if (flash_status == FLASH_STATUS_OK
@@ -94,7 +125,6 @@ void FlashLoggerTask(void *argument) {
 				}
 			}
 		} else if (activeQueue == flashCommandQueue) {
-//			send_uart2_message("Command to FLASH!\r\n");
 
 			xQueueReceive(flashCommandQueue, &uart_command_frame, 0);
 
@@ -113,30 +143,36 @@ void FlashLoggerTask(void *argument) {
 					send_uart2_message(
 							"Something went wrong. Your history couldn't be erased.\r\n");
 
-				} else {
-					flash_status = flash_logger_init(&flash_log_address,
-							&measurement_record_address);
-
-					if (flash_status != FLASH_STATUS_OK) {
-						Error_Handler();
-					}
-
-					send_uart2_message("History erased!\r\n");
 				}
 
-			} else if (flash_command == FLASH_CMD_READ) {
-//				send_uart2_message("Reading...\r\n");
+				flash_status = flash_logger_init(&measurement_record_address);
 
+				if (flash_status != FLASH_STATUS_OK) {
+					Error_Handler();
+				}
+
+				/* A successful erase always clears whatever fault the
+				 * logger was previously in -- the chip is now fully
+				 * blank and flash_logger_init() just proved it reads
+				 * back cleanly. */
+				alarm_counter = 0;
+				alarm_fault = ALARM_OK;
+				xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
+
+				send_uart2_message("History erased!\r\n");
+			}
+
+			else if (flash_command == FLASH_CMD_READ) {
 				flash_status = flash_logger_send_history(
 						&measurement_record_address, records_to_read);
-//				send_uart2_message("DONE!\r\n");
+
 				if (flash_status != FLASH_STATUS_OK) {
 
 					send_uart2_message(
 							"Something went wrong. Your history couldn't be sent back.\r\n");
 
 				}
-			}else if( flash_command == FLASH_CMD_UNKNOWN){
+			} else if (flash_command == FLASH_CMD_UNKNOWN) {
 				send_uart2_message("Unknown command.\r\n");
 			}
 

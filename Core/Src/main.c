@@ -103,13 +103,10 @@ int main(void) {
 	MX_USART1_UART_Init();
 	MX_SPI2_Init();
 	/* USER CODE BEGIN 2 */
-	__HAL_SPI_ENABLE(&hspi2);
+
 
 //flash_erase_chip();
-//	uint32_t address = 0x00000C3C;
-//	uint16_t length = 40;
-//	uint8_t buffer[40];
-//	FlashStatus_t flash_status = flash_read_data(address, buffer, length);
+
 	AppQueuesInit();
 	AppTasksInit();
 	/* USER CODE END 2 */

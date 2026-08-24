@@ -221,6 +221,11 @@ void AlarmManagerTask(void *argument) {
 			measurement_alarm_state = ALARM_COMMUNICATION;
 		}
 
+		if (flash_logger_alarm_fault == ALARM_OK) {
+			HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
+			ALARM_STORAGE_FAULT_Pin, GPIO_PIN_RESET);
+		}
+
 		if (measurement_alarm_state != ALARM_NORMAL) {
 			xQueueOverwrite(alarmToMqttQueue, &measurement_alarm_state);
 		}
