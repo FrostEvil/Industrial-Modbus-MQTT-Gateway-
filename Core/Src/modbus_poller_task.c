@@ -23,7 +23,7 @@ static ModbusTarget_t modbus_target = { .slave_id = 0x01, .function_code = 0x03,
 		.register_start_hi = 0x00, .register_start_lo = 0x00,
 		.register_count_hi = 0x00, .register_count_lo = 0x03 };
 
-static ModbusRetryPolicy_t modbus_retry_policy = { .poll_period_ms = 5000,
+static ModbusRetryPolicy_t modbus_retry_policy = { .poll_period_ms = 1000,
 		.response_timeout_ms = 200, .max_attempts = 3 };
 
 static uint8_t modbus_request_payload[6];
@@ -31,26 +31,26 @@ static uint8_t modbus_tx_buffer_size = 8;
 static uint8_t modbus_tx_buffer[8];
 static uint8_t modbus_rx_data[256];
 static char pc_tx_buffer[64];
-static uint8_t dropped_measurements = 0;
 
-MeasurementMessage_t measurement_message;
+MeasurementRecord_t measurement_record;
 
 static void modbus_parse_measurements(uint8_t *frame) {
 
-	measurement_message.voltage = (float) ((frame[3] << 8) | frame[4]) / 10.0f;
-	measurement_message.current = (float) ((frame[5] << 8) | frame[6]) / 10.0f;
-	measurement_message.temperature = (float) ((frame[7] << 8) | frame[8])
+	measurement_record.voltage = (float) ((frame[3] << 8) | frame[4]) / 10.0f;
+	measurement_record.current = (float) ((frame[5] << 8) | frame[6]) / 10.0f;
+	measurement_record.temperature = (float) ((frame[7] << 8) | frame[8])
 			/ 10.0f;
 
+	// Wysyłanie pomiaru do PC
 	snprintf(pc_tx_buffer, sizeof(pc_tx_buffer),
 			"Voltage:%.1fV, Current:%.1fA, Temperature:%.1fC\r\n",
-			measurement_message.voltage, measurement_message.current,
-			measurement_message.temperature);
-	HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer, strlen(pc_tx_buffer),
-	HAL_MAX_DELAY);
+			measurement_record.voltage, measurement_record.current,
+			measurement_record.temperature);
+//	HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer, strlen(pc_tx_buffer),
+//	HAL_MAX_DELAY);
 }
 
-static void modbus_result(ModbusStatus_t modbus_master_poll_status,
+static void modbus_result(const ModbusStatus_t modbus_master_poll_status,
 		uint8_t exception_code) {
 
 	switch (modbus_master_poll_status) {
@@ -94,11 +94,11 @@ static void modbus_result(ModbusStatus_t modbus_master_poll_status,
 	}
 
 	if (modbus_master_poll_status != MODBUS_OK) {
-		measurement_message.voltage = 0;
-		measurement_message.current = 0;
-		measurement_message.temperature = 0;
-		HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
-				strlen(pc_tx_buffer), HAL_MAX_DELAY);
+		measurement_record.voltage = 0;
+		measurement_record.current = 0;
+		measurement_record.temperature = 0;
+//		HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
+//				strlen(pc_tx_buffer), HAL_MAX_DELAY);
 	}
 }
 
@@ -131,21 +131,12 @@ void ModbusPollerTask(void *argument) {
 		ModbusStatus_t modbus_master_poll_status = modbus_master_poll(
 				modbus_tx_buffer, modbus_tx_buffer_size, modbus_rx_data,
 				&modbus_target, &modbus_retry_policy, &exception_code);
+
 		modbus_result(modbus_master_poll_status, exception_code);
 
-		measurement_message.status = modbus_master_poll_status;
-		xQueueOverwrite(modbusToAlarmQueue, &measurement_message);
-		xQueueOverwrite(modbusToMqttQueue, &measurement_message);
-		if (xQueueSend(modbusToFlashLoggerQueue, &measurement_message,
-				pdMS_TO_TICKS(100)) != pdPASS) {
-			dropped_measurements++;
-
-			snprintf(pc_tx_buffer, sizeof(pc_tx_buffer),
-					"Dropped measurements: %d\r\n", dropped_measurements);
-			HAL_UART_Transmit(&huart2, (uint8_t*) pc_tx_buffer,
-					strlen(pc_tx_buffer),
-					HAL_MAX_DELAY);
-		}
+		measurement_record.status = modbus_master_poll_status;
+		xQueueOverwrite(modbusToAlarmQueue, &measurement_record);
+		xQueueOverwrite(modbusToMqttQueue, &measurement_record);
 
 		vTaskDelayUntil(&lastWakeTime,
 				pdMS_TO_TICKS(modbus_retry_policy.poll_period_ms));

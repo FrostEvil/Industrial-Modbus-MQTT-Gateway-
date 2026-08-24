@@ -34,22 +34,22 @@ static void SendAlarmMessage(AlarmState_t alarm_state) {
 }
 
 void MqttPublisherTask(void *argument) {
-	MeasurementMessage_t measurement_message;
+	MeasurementRecord_t measurement_record;
 	AlarmState_t alarm_state;
-	const char message[] = "Publication of data\r\n";
+//	const char message[] = "Publication of data\r\n";
 
 	for (;;) {
 
 		if (xQueueReceive(alarmToMqttQueue, &alarm_state,
 				pdMS_TO_TICKS(5000)) == pdTRUE) {
-			SendAlarmMessage(alarm_state);
+//			SendAlarmMessage(alarm_state);
 
 		}
-		xQueueReceive(modbusToMqttQueue, &measurement_message,
+		xQueueReceive(modbusToMqttQueue, &measurement_record,
 		portMAX_DELAY);
 
-		HAL_UART_Transmit(&huart2, (uint8_t*) message, strlen(message),
-		HAL_MAX_DELAY);
+//		HAL_UART_Transmit(&huart2, (uint8_t*) message, strlen(message),
+//		HAL_MAX_DELAY);
 
 	}
 }
