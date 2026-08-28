@@ -8,6 +8,9 @@
 #ifndef INC_FLASH_LOGGER_TASK_H_
 #define INC_FLASH_LOGGER_TASK_H_
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 typedef enum {
 	ALARM_OK = 0x00U, COMMUNICATION_FAULT = 0x01U, STORAGE_FAULT = 0x02U
 } FlashLoggerAlarmFault_t;
@@ -19,7 +22,7 @@ typedef enum {
 // Bit 1 (0x02) = current changed state
 // Bit 2 (0x04) = temperature changed state
 // Bit 3 (0x08) = unvalid CRC
-// Bit 4 (0x16) = empty record
+// Bit 4 (0x10) = empty record
 // A set bit means "this channel's status flipped in this record" --
 // whether that flip was into or out of range must be read from the
 // channel's actual value against the known thresholds, not from this
@@ -36,6 +39,7 @@ typedef struct {
 } FlashRecord_t;
 
 void FlashLoggerTask_Init(void);
+
 extern TaskHandle_t flashLoggerTaskHandle;
 
 #endif /* INC_FLASH_LOGGER_TASK_H_ */

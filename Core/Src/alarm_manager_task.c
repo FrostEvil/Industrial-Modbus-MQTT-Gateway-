@@ -19,12 +19,16 @@
 #define VOLTAGE_HYSTERESIS 1
 
 #define CURRENT_MIN 0
-#define CURRENT_MAX 10
+#define CURRENT_MAX 25
 #define CURRENT_HYSTERESIS 0.5
 
-#define TEMPERATURE_MIN 20
-#define TEMPERATURE_MAX 35
+#define TEMPERATURE_MIN 10
+#define TEMPERATURE_MAX 45
 #define TEMPERATURE_HYSTERESIS 1
+
+#define MEASUREMENT_BIT_VOLTAGE   0x01
+#define MEASUREMENT_BIT_CURRENT   0x02
+#define MEASUREMENT_BIT_TEMP      0x04
 
 TaskHandle_t alarmManagerTaskHandle;
 
@@ -101,18 +105,18 @@ static void validate_measurement_status(
 		uint8_t *is_status_changed, uint8_t *trigger_channel) {
 
 	if (measurement_status->voltage != prev_measurement_status->voltage) {
-		*trigger_channel |= 0x01;
+		*trigger_channel |= MEASUREMENT_BIT_VOLTAGE;
 		*is_status_changed = 1;
 	}
 
 	if (measurement_status->current != prev_measurement_status->current) {
-		*trigger_channel |= 0x02;
+		*trigger_channel |= MEASUREMENT_BIT_CURRENT;
 		*is_status_changed = 1;
 	}
 
 	if (measurement_status->temperature
 			!= prev_measurement_status->temperature) {
-		*trigger_channel |= 0x04;
+		*trigger_channel |= MEASUREMENT_BIT_TEMP;
 		*is_status_changed = 1;
 	}
 
@@ -121,42 +125,45 @@ static void validate_measurement_status(
 	prev_measurement_status->temperature = measurement_status->temperature;
 }
 
-static void update_alarm_led(AlarmState_t alarm_state) {
-	switch (alarm_state) {
-	case ALARM_NORMAL:
-		HAL_GPIO_WritePin(ALARM_NORMAL_GPIO_Port, ALARM_NORMAL_Pin,
-				GPIO_PIN_SET);
-		HAL_GPIO_WritePin(ALARM_MEASUREMENT_GPIO_Port, ALARM_MEASUREMENT_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_COMMUNICATION_GPIO_Port,
-		ALARM_COMMUNICATION_Pin, GPIO_PIN_RESET);
-		break;
-
-	case ALARM_MEASUREMENT:
-		HAL_GPIO_WritePin(ALARM_NORMAL_GPIO_Port, ALARM_NORMAL_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_MEASUREMENT_GPIO_Port, ALARM_MEASUREMENT_Pin,
-				GPIO_PIN_SET);
-		HAL_GPIO_WritePin(ALARM_COMMUNICATION_GPIO_Port,
-		ALARM_COMMUNICATION_Pin, GPIO_PIN_RESET);
-		break;
-	case ALARM_COMMUNICATION:
-		HAL_GPIO_WritePin(ALARM_NORMAL_GPIO_Port, ALARM_NORMAL_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_MEASUREMENT_GPIO_Port, ALARM_MEASUREMENT_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_COMMUNICATION_GPIO_Port,
-		ALARM_COMMUNICATION_Pin, GPIO_PIN_SET);
-		break;
-
-	default:
-		HAL_GPIO_WritePin(ALARM_NORMAL_GPIO_Port, ALARM_NORMAL_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_MEASUREMENT_GPIO_Port, ALARM_MEASUREMENT_Pin,
-				GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(ALARM_COMMUNICATION_GPIO_Port,
-		ALARM_COMMUNICATION_Pin, GPIO_PIN_RESET);
+static void validate_measurement_bitmask(uint8_t *measurement_bitmask,
+		const MeasurementStatus_t *measurement_status) {
+	if (measurement_status->voltage == MEASUREMENT_OUT_OF_RANGE) {
+		*measurement_bitmask |= MEASUREMENT_BIT_VOLTAGE;
+	} else {
+		*measurement_bitmask &= ~MEASUREMENT_BIT_VOLTAGE;
 	}
+
+	if (measurement_status->current == MEASUREMENT_OUT_OF_RANGE) {
+		*measurement_bitmask |= MEASUREMENT_BIT_CURRENT;
+	} else {
+		*measurement_bitmask &= ~MEASUREMENT_BIT_CURRENT;
+	}
+
+	if (measurement_status->temperature == MEASUREMENT_OUT_OF_RANGE) {
+		*measurement_bitmask |= MEASUREMENT_BIT_TEMP;
+	} else {
+		*measurement_bitmask &= ~MEASUREMENT_BIT_TEMP;
+	}
+}
+
+static void update_alarm_led(AlarmState_t alarm_state,
+		FlashLoggerAlarmFault_t flash_logger_alarm_fault) {
+
+	uint8_t normal_led = (alarm_state == ALARM_NORMAL)
+			&& (flash_logger_alarm_fault == ALARM_OK);
+	uint8_t measurement_led = (alarm_state == ALARM_MEASUREMENT);
+	uint8_t communication_led = (alarm_state == ALARM_COMMUNICATION)
+			|| (flash_logger_alarm_fault == COMMUNICATION_FAULT);
+	uint8_t storage_led = (flash_logger_alarm_fault == STORAGE_FAULT);
+
+	HAL_GPIO_WritePin(ALARM_NORMAL_GPIO_Port, ALARM_NORMAL_Pin,
+			normal_led ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(ALARM_MEASUREMENT_GPIO_Port, ALARM_MEASUREMENT_Pin,
+			measurement_led ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(ALARM_COMMUNICATION_GPIO_Port, ALARM_COMMUNICATION_Pin,
+			communication_led ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port, ALARM_STORAGE_FAULT_Pin,
+			storage_led ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 void AlarmManagerTask(void *argument) {
@@ -170,7 +177,11 @@ void AlarmManagerTask(void *argument) {
 	uint8_t is_measurement_status_changed = 0;
 
 	AlarmState_t measurement_alarm_state = ALARM_NORMAL;
+	AlarmState_t prev_measurement_alarm_state = ALARM_NORMAL;
+	FlashLoggerAlarmFault_t prev_flash_logger_alarm_fault = ALARM_OK;
 	FlashLoggerAlarmFault_t flash_logger_alarm_fault = ALARM_OK;
+
+	MqttAlarmState_t mqtt_alarm_state;
 
 	uint8_t dropped_measurements = 0;
 
@@ -181,10 +192,6 @@ void AlarmManagerTask(void *argument) {
 		if (xQueueReceive(flashToAlarmQueue, &flash_logger_alarm_fault,
 				pdMS_TO_TICKS(100)) == pdTRUE) {
 
-			if (flash_logger_alarm_fault == STORAGE_FAULT) {
-				HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
-				ALARM_STORAGE_FAULT_Pin, GPIO_PIN_SET);
-			}
 		}
 
 		xQueueReceive(modbusToAlarmQueue, &measurement_record,
@@ -215,22 +222,24 @@ void AlarmManagerTask(void *argument) {
 				dropped_measurements++;
 
 			}
+
 		}
 
-		if (flash_logger_alarm_fault == COMMUNICATION_FAULT) {
-			measurement_alarm_state = ALARM_COMMUNICATION;
+		if (measurement_alarm_state != prev_measurement_alarm_state
+				|| flash_logger_alarm_fault != prev_flash_logger_alarm_fault
+				|| is_measurement_status_changed) {
+
+			mqtt_alarm_state.alarm_state = measurement_alarm_state;
+			mqtt_alarm_state.storage_fault = flash_logger_alarm_fault;
+			validate_measurement_bitmask(&mqtt_alarm_state.measurement_bitmask,
+					&measurement_status);
+			xQueueOverwrite(alarmToMqttQueue, &mqtt_alarm_state);
 		}
 
-		if (flash_logger_alarm_fault == ALARM_OK) {
-			HAL_GPIO_WritePin(ALARM_STORAGE_FAULT_GPIO_Port,
-			ALARM_STORAGE_FAULT_Pin, GPIO_PIN_RESET);
-		}
+		prev_measurement_alarm_state = measurement_alarm_state;
+		prev_flash_logger_alarm_fault = flash_logger_alarm_fault;
 
-		if (measurement_alarm_state != ALARM_NORMAL) {
-			xQueueOverwrite(alarmToMqttQueue, &measurement_alarm_state);
-		}
-
-		update_alarm_led(measurement_alarm_state);
+		update_alarm_led(measurement_alarm_state, flash_logger_alarm_fault);
 		is_measurement_status_changed = 0;
 	}
 }

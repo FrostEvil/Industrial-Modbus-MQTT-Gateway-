@@ -67,7 +67,26 @@ void MX_FREERTOS_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+//char esp_tx_buffer[] = "M,V=230.1,I=4.12,T=38.7\r\n";
+//char esp_rx_buffer[64];
+//void esp_rx_event(HAL_UART_RxEventTypeTypeDef event, uint16_t Size) {
+//	UartCommandFrame_t uart_command_frame;
+//
+//	if (event == HAL_UART_RXEVENT_IDLE) {
+//		if (Size >= sizeof(uart_command_frame.data)) {
+//			Size = sizeof(uart_command_frame.data) - 1;
+//		}
+//
+//		uart_command_frame.length = Size;
+//		memcpy(uart_command_frame.data, esp_rx_buffer, Size);
+//
+//		HAL_UART_Transmit(&huart2, uart_command_frame.data,
+//				uart_command_frame.length, HAL_MAX_DELAY);
+//
+//		HAL_UARTEx_ReceiveToIdle_IT(&huart6, (uint8_t*) esp_rx_buffer,
+//				sizeof(esp_rx_buffer));
+//	}
+//}
 /* USER CODE END 0 */
 
 /**
@@ -102,13 +121,18 @@ int main(void) {
 	MX_USART2_UART_Init();
 	MX_USART1_UART_Init();
 	MX_SPI2_Init();
+	MX_USART6_UART_Init();
 	/* USER CODE BEGIN 2 */
 
-
 //flash_erase_chip();
-
+//
 	AppQueuesInit();
 	AppTasksInit();
+
+
+//	HAL_UARTEx_ReceiveToIdle_IT(&huart6, (uint8_t*) esp_rx_buffer,
+//			sizeof(esp_rx_buffer));
+
 	/* USER CODE END 2 */
 
 	/* Init scheduler */
@@ -126,6 +150,9 @@ int main(void) {
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
+//		HAL_UART_Transmit(&huart6, (uint8_t*) esp_tx_buffer, strlen(esp_tx_buffer),
+//			HAL_MAX_DELAY);
+//		HAL_Delay(2500);
 	}
 	/* USER CODE END 3 */
 }
