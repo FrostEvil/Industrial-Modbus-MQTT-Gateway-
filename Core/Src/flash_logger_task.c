@@ -43,16 +43,7 @@ void FlashLoggerTask(void *argument) {
 	FlashCommand_t flash_command;
 	uint8_t records_to_read = 0;
 
-	uint32_t start = xTaskGetTickCount();
 	flash_status = flash_logger_init(&measurement_record_address);
-	uint32_t elapsed_ms = xTaskGetTickCount() - start;
-
-	char message[64];
-
-	snprintf(message, sizeof(message), "Elapsed time: %lu ms\r\n",
-			(unsigned long) elapsed_ms);
-
-	send_uart2_message(message);
 
 	if (flash_status != FLASH_STATUS_OK) {
 		Error_Handler();

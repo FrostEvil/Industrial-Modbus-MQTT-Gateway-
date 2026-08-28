@@ -42,7 +42,7 @@ static uint8_t modbusToMqttQueueStorage[MODBUS_TO_MQTT_QUEUE_LENGTH
 static StaticQueue_t modbusToMqTTQueueControlBlock;
 
 static uint8_t alarmToMqttQueueStorage[ALARM_TO_MQTT_QUEUE_LENGTH
-		* sizeof(AlarmState_t)];
+		* sizeof(MqttAlarmState_t)];
 static StaticQueue_t alarmToMqttQueueControlBlock;
 
 static uint8_t alarmToFlashQueueStorage[ALARM_TO_FLASH_QUEUE_LENGTH
@@ -57,7 +57,6 @@ static uint8_t flashCommandQueueStorage[FLASH_COMMAND_QUEUE_LENGTH
 		* sizeof(UartCommandFrame_t)];
 static StaticQueue_t flashCommandQueueControlBlock;
 
-
 void AppQueuesInit(void) {
 	modbusToAlarmQueue = xQueueCreateStatic(MODBUS_TO_ALARM_QUEUE_LENGTH, // liczba elementow (glebokosc)
 			sizeof(MeasurementRecord_t),// rozmiar POJEDYNCZEGO elementu
@@ -70,7 +69,7 @@ void AppQueuesInit(void) {
 			&modbusToMqTTQueueControlBlock);
 
 	alarmToMqttQueue = xQueueCreateStatic(ALARM_TO_MQTT_QUEUE_LENGTH,
-			sizeof(AlarmState_t), alarmToMqttQueueStorage,
+			sizeof(MqttAlarmState_t), alarmToMqttQueueStorage,
 			&alarmToMqttQueueControlBlock);
 
 	alarmToFlashQueue = xQueueCreateStatic(ALARM_TO_FLASH_QUEUE_LENGTH,
@@ -89,6 +88,5 @@ void AppQueuesInit(void) {
 
 	xQueueAddToSet(alarmToFlashQueue, flashQueueSet);
 	xQueueAddToSet(flashCommandQueue, flashQueueSet);
-
 
 }

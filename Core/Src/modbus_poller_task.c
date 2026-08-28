@@ -56,7 +56,7 @@ static void modbus_result(const ModbusStatus_t modbus_master_poll_status,
 	switch (modbus_master_poll_status) {
 	case MODBUS_OK:
 		modbus_parse_measurements(modbus_rx_data);
-//		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin); // heartbeat on each successful cycle
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin); // heartbeat on each successful cycle
 		break;
 
 	case MODBUS_ERR_EXCEPTION:
