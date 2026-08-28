@@ -8,8 +8,12 @@
 #ifndef INC_APP_TASKS_H_
 #define INC_APP_TASKS_H_
 
-#include "FreeRTOS.h"
-#include "task.h"
-
+/**
+ * @brief Create all application FreeRTOS tasks.
+ *
+ * Must be called during application initialisation before the FreeRTOS
+ * scheduler is started.
+ */
 void AppTasksInit(void);
+
 #endif /* INC_APP_TASKS_H_ */

@@ -10,88 +10,145 @@
 #include "gpio.h"
 #include "spi.h"
 
-#define FLASH_SIZE_BYTES 0x01000000
-#define FLASH_PAGE_SIZE 0x0100
-#define FLASH_CHIP_ERASE_TIMEOUT_MS 200000
-#define FLASH_SECTOR_ERASE_TIMEOUT_MS 450
-#define FLASH_PAGE_PROGRAM_TIMEOUT_MS 3
-#define FLASH_SPI_TIMEOUT_MS 500
+#define FLASH_SIZE_BYTES                0x01000000UL
+#define FLASH_PAGE_SIZE                0x0100U
+#define FLASH_SECTOR_SIZE              0x1000U
 
-#define FLASH_CMD_WRITE_ENABLE      0x06
-#define FLASH_CMD_READ_STATUS_REG1  0x05
-#define FLASH_CMD_READ_JEDEC_ID     0x9F
-#define FLASH_CMD_READ_DATA         0x03
-#define FLASH_CMD_PAGE_PROGRAM      0x02
-#define FLASH_CMD_SECTOR_ERASE      0x20
-#define FLASH_CMD_CHIP_ERASE		0xC7
+#define FLASH_CHIP_ERASE_TIMEOUT_MS    200000U
+#define FLASH_SECTOR_ERASE_TIMEOUT_MS  450U
+#define FLASH_PAGE_PROGRAM_TIMEOUT_MS  3U
+#define FLASH_SPI_TIMEOUT_MS           500U
 
-#define FLASH_STATUS_REG1_BUSY_BIT  0x01
-#define FLASH_STATUS_REG1_WEL_BIT 0x02
+#define FLASH_CMD_WRITE_ENABLE         0x06U
+#define FLASH_CMD_READ_STATUS_REG1     0x05U
+#define FLASH_CMD_READ_JEDEC_ID        0x9FU
+#define FLASH_CMD_READ_DATA            0x03U
+#define FLASH_CMD_PAGE_PROGRAM         0x02U
+#define FLASH_CMD_SECTOR_ERASE         0x20U
+#define FLASH_CMD_CHIP_ERASE           0xC7U
 
+#define FLASH_STATUS_REG1_BUSY_BIT     0x01U
+#define FLASH_STATUS_REG1_WEL_BIT      0x02U
+
+/*
+ * Send a complete SPI transaction with one continuous CS assertion.
+ *
+ * This helper is used when the entire transaction consists only of bytes
+ * transmitted to the Flash, for example Write Enable or Sector Erase.
+ */
 static HAL_StatusTypeDef flash_spi_transmit(const uint8_t *tx_buffer,
 		uint16_t size) {
 	HAL_StatusTypeDef spi_transmit_status;
 
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_RESET);
+
 	spi_transmit_status = HAL_SPI_Transmit(&hspi2, tx_buffer, size,
 	FLASH_SPI_TIMEOUT_MS);
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_SET);
+
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_SET);
 
 	return spi_transmit_status;
 }
 
+/*
+ * Send two consecutive parts of one SPI transaction.
+ *
+ * CS stays low between the two HAL_SPI_Transmit() calls. This matters for
+ * commands such as Page Program, where the Flash expects the command,
+ * address and data to belong to one SPI transaction.
+ */
 static HAL_StatusTypeDef flash_spi_transmit_command_and_data(
 		const uint8_t *tx_buffer_first, uint16_t size_first,
 		const uint8_t *tx_buffer_second, uint16_t size_second) {
 	HAL_StatusTypeDef spi_transmit_status;
 
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_RESET);
+
 	spi_transmit_status = HAL_SPI_Transmit(&hspi2, tx_buffer_first, size_first,
 	FLASH_SPI_TIMEOUT_MS);
+
 	if (spi_transmit_status != HAL_OK) {
-		HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_SET);
+
+		HAL_GPIO_WritePin(
+		FLASH_CS_GPIO_Port,
+		FLASH_CS_Pin, GPIO_PIN_SET);
+
 		return spi_transmit_status;
 	}
+
 	spi_transmit_status = HAL_SPI_Transmit(&hspi2, tx_buffer_second,
 			size_second,
 			FLASH_SPI_TIMEOUT_MS);
 
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_SET);
 
 	return spi_transmit_status;
 }
 
+/*
+ * Perform a command followed by a read within one continuous SPI
+ * transaction.
+ *
+ * The Flash needs CS to remain low between sending the command and reading
+ * the response. This helper is used for operations such as reading the JEDEC
+ * ID or Status Register.
+ */
 static HAL_StatusTypeDef flash_spi_transfer(const uint8_t *tx_buffer,
 		uint16_t tx_size, uint8_t *rx_buffer, uint16_t rx_size) {
 	HAL_StatusTypeDef spi_transmit_status;
 	HAL_StatusTypeDef spi_receive_status;
 
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_RESET);
+
 	spi_transmit_status = HAL_SPI_Transmit(&hspi2, tx_buffer, tx_size,
 	FLASH_SPI_TIMEOUT_MS);
 
 	if (spi_transmit_status != HAL_OK) {
-		HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_SET);
+
+		HAL_GPIO_WritePin(
+		FLASH_CS_GPIO_Port,
+		FLASH_CS_Pin, GPIO_PIN_SET);
+
 		return spi_transmit_status;
 	}
 
 	spi_receive_status = HAL_SPI_Receive(&hspi2, rx_buffer, rx_size,
 	FLASH_SPI_TIMEOUT_MS);
-	HAL_GPIO_WritePin(FLASH_CS_GPIO_Port, FLASH_CS_Pin, GPIO_PIN_SET);
+
+	HAL_GPIO_WritePin(
+	FLASH_CS_GPIO_Port,
+	FLASH_CS_Pin, GPIO_PIN_SET);
 
 	return spi_receive_status;
 }
 
+/*
+ * Send the Write Enable command.
+ *
+ * NOR Flash requires the WEL (Write Enable Latch) bit to be set before
+ * program or erase operations can be accepted.
+ */
 static FlashStatus_t flash_write_enable(void) {
-	uint8_t write_enable_tx_buffer[] = { FLASH_CMD_WRITE_ENABLE };
+	const uint8_t write_enable_tx_buffer[] = {
+	FLASH_CMD_WRITE_ENABLE };
 
 	if (flash_spi_transmit(write_enable_tx_buffer,
 			sizeof(write_enable_tx_buffer)) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
 	return FLASH_STATUS_OK;
-
 }
 
 FlashStatus_t flash_read_jedec_id(FlashJedecId_t *jedec_id) {
@@ -99,35 +156,57 @@ FlashStatus_t flash_read_jedec_id(FlashJedecId_t *jedec_id) {
 		return FLASH_STATUS_INVALID_ARGUMENT;
 	}
 
-	uint8_t tx_buffer[] = { FLASH_CMD_READ_JEDEC_ID };
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_READ_JEDEC_ID };
+
 	uint8_t rx_buffer[3];
 
 	if (flash_spi_transfer(tx_buffer, sizeof(tx_buffer), rx_buffer,
 			sizeof(rx_buffer)) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
+
+	/*
+	 * JEDEC ID consists of three bytes:
+	 * manufacturer ID, memory type and device capacity.
+	 */
 	jedec_id->manufacturer_id = rx_buffer[0];
 	jedec_id->memory_type = rx_buffer[1];
 	jedec_id->capacity = rx_buffer[2];
-	return FLASH_STATUS_OK;
 
+	return FLASH_STATUS_OK;
 }
 
+/*
+ * Read Status Register 1.
+ *
+ * BUSY tells whether an internal program/erase operation is still running.
+ * WEL tells whether Write Enable has successfully prepared the device for
+ * the next write/erase command.
+ */
 static FlashStatus_t flash_read_status_register(uint8_t *status_register) {
-
-	uint8_t tx_buffer[] = { FLASH_CMD_READ_STATUS_REG1, 0x00 };
-	uint8_t rx_buffer[2];
-
 	if (status_register == NULL) {
 		return FLASH_STATUS_INVALID_ARGUMENT;
 	}
 
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_READ_STATUS_REG1, 0x00U };
+
+	uint8_t rx_buffer[2];
+
 	if (flash_spi_transfer(tx_buffer, sizeof(tx_buffer), rx_buffer,
 			sizeof(rx_buffer)) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
+	/*
+	 * The first received byte corresponds to the command phase.
+	 * The second byte contains Status Register 1.
+	 */
 	*status_register = rx_buffer[1];
+
 	return FLASH_STATUS_OK;
 }
 
@@ -145,20 +224,29 @@ FlashStatus_t flash_is_write_enabled(uint8_t *write_enabled) {
 		return flash_status;
 	}
 
-	*write_enabled = status_register & FLASH_STATUS_REG1_WEL_BIT;
+	*write_enabled = (status_register & FLASH_STATUS_REG1_WEL_BIT) != 0U;
+
 	return FLASH_STATUS_OK;
 }
 
+/*
+ * Execute Write Enable and verify that the Flash accepted it.
+ *
+ * Checking WEL makes the higher layer aware of a failed preparation step
+ * instead of blindly starting a program/erase operation.
+ */
 static FlashStatus_t flash_write_enable_and_verify(void) {
 	FlashStatus_t flash_status;
 	uint8_t write_enable;
 
 	flash_status = flash_write_enable();
+
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
 
 	flash_status = flash_is_write_enabled(&write_enable);
+
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
@@ -184,117 +272,182 @@ FlashStatus_t flash_is_busy(uint8_t *busy) {
 		return flash_status;
 	}
 
-	*busy = status_register & FLASH_STATUS_REG1_BUSY_BIT;
+	*busy = (status_register & FLASH_STATUS_REG1_BUSY_BIT) != 0U;
+
 	return FLASH_STATUS_OK;
 }
 
+/*
+ * Wait until the Flash finishes its internal operation.
+ *
+ * Page Program and Erase commands return before the Flash has actually
+ * finished modifying its memory cells. During that time the BUSY bit remains
+ * set in Status Register 1.
+ *
+ * The timeout prevents the task from waiting forever if the device stops
+ * responding or remains busy unexpectedly.
+ */
 static FlashStatus_t flash_wait_while_busy(uint32_t timeout) {
 	FlashStatus_t flash_status;
 	uint8_t status_register;
-	uint8_t status_busy = 1;
-
 	uint32_t start_time = HAL_GetTick();
-	while (status_busy) {
+
+	while (1) {
 
 		flash_status = flash_read_status_register(&status_register);
+
 		if (flash_status != FLASH_STATUS_OK) {
 			return flash_status;
 		}
 
-		status_busy = status_register & FLASH_STATUS_REG1_BUSY_BIT;
+		if ((status_register & FLASH_STATUS_REG1_BUSY_BIT) == 0U) {
+			return FLASH_STATUS_OK;
+		}
 
-		if (HAL_GetTick() - start_time > timeout) {
+		if (HAL_GetTick() - start_time >= timeout) {
 			return FLASH_STATUS_TIMEOUT;
 		}
 	}
-	return FLASH_STATUS_OK;
 }
 
 FlashStatus_t flash_read_data(uint32_t address, uint8_t *data, uint16_t length) {
-	if (data == NULL || length == 0) {
+	if (data == NULL || length == 0U) {
 		return FLASH_STATUS_INVALID_ARGUMENT;
 	}
 
-	const uint8_t tx_buffer[] = { FLASH_CMD_READ_DATA, (address >> 16) & 0xFF,
-			(address >> 8) & 0xFF, address & 0xFF };
+	/*
+	 * Check both the starting address and the complete requested range.
+	 *
+	 * The subtraction form avoids integer overflow in address + length.
+	 */
+	if (address >= FLASH_SIZE_BYTES || length > FLASH_SIZE_BYTES - address) {
+
+		return FLASH_STATUS_INVALID_ADDRESS;
+	}
+
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_READ_DATA, (uint8_t) (address >> 16), (uint8_t) (address >> 8),
+			(uint8_t) address };
 
 	if (flash_spi_transfer(tx_buffer, sizeof(tx_buffer), data, length)
 			!= HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
-	} else {
-		return FLASH_STATUS_OK;
 	}
 
+	return FLASH_STATUS_OK;
 }
 
 FlashStatus_t flash_write_data(uint32_t address, const uint8_t *data,
 		uint16_t length) {
-
 	FlashStatus_t flash_status;
 
-	if (data == NULL || length == 0) {
+	if (data == NULL || length == 0U) {
 		return FLASH_STATUS_INVALID_ARGUMENT;
 	}
 
-	if (address >= FLASH_SIZE_BYTES || address + length > FLASH_SIZE_BYTES) {
+	/*
+	 * The complete write must fit inside the physical Flash address space.
+	 * The subtraction form avoids overflow in address + length.
+	 */
+	if (address >= FLASH_SIZE_BYTES || length > FLASH_SIZE_BYTES - address) {
+
 		return FLASH_STATUS_INVALID_ADDRESS;
 	}
 
-	if ((address & 0xFF) + length > FLASH_PAGE_SIZE) {
+	/*
+	 * Page Program cannot cross a 256-byte page boundary.
+	 * The logger therefore guarantees that every record fits in one page.
+	 */
+	if ((address & 0xFFU) + length > FLASH_PAGE_SIZE) {
 		return FLASH_STATUS_PAGE_OVERFLOW;
 	}
 
-	uint8_t tx_buffer[] = { FLASH_CMD_PAGE_PROGRAM, (address >> 16) & 0xFF,
-			(address >> 8) & 0xFF, address & 0xFF };
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_PAGE_PROGRAM, (uint8_t) (address >> 16), (uint8_t) (address >> 8),
+			(uint8_t) address };
 
+	/*
+	 * Every Page Program operation must be preceded by Write Enable.
+	 */
 	flash_status = flash_write_enable_and_verify();
+
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
 
+	/*
+	 * Command, address and data must be transmitted while CS remains low.
+	 */
 	if (flash_spi_transmit_command_and_data(tx_buffer, sizeof(tx_buffer), data,
 			length) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
-	return flash_wait_while_busy(FLASH_PAGE_PROGRAM_TIMEOUT_MS);
+	/*
+	 * Page Program starts an internal programming operation. Wait until the
+	 * device clears BUSY before allowing another operation.
+	 */
+	return flash_wait_while_busy(
+	FLASH_PAGE_PROGRAM_TIMEOUT_MS);
 }
 
 FlashStatus_t flash_erase_sector(uint32_t address) {
+	if (address >= FLASH_SIZE_BYTES || (address % FLASH_SECTOR_SIZE) != 0U) {
 
-	if (address >= FLASH_SIZE_BYTES) {
 		return FLASH_STATUS_INVALID_ADDRESS;
 	}
 
-	const uint8_t tx_buffer[] = { FLASH_CMD_SECTOR_ERASE, (address >> 16)
-			& 0xFF, (address >> 8) & 0xFF, address & 0xFF };
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_SECTOR_ERASE, (uint8_t) (address >> 16), (uint8_t) (address >> 8),
+			(uint8_t) address };
+
 	FlashStatus_t flash_status;
 
+	/*
+	 * Sector Erase also requires the Write Enable latch.
+	 */
 	flash_status = flash_write_enable_and_verify();
+
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
 
 	if (flash_spi_transmit(tx_buffer, sizeof(tx_buffer)) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
-	return flash_wait_while_busy(FLASH_SECTOR_ERASE_TIMEOUT_MS);
+
+	return flash_wait_while_busy(
+	FLASH_SECTOR_ERASE_TIMEOUT_MS);
 }
 
 FlashStatus_t flash_erase_chip(void) {
 	FlashStatus_t flash_status;
 
-	const uint8_t tx_buffer[] = { FLASH_CMD_CHIP_ERASE };
+	const uint8_t tx_buffer[] = {
+	FLASH_CMD_CHIP_ERASE };
 
+	/*
+	 * Chip Erase is protected by the same Write Enable mechanism as
+	 * Page Program and Sector Erase.
+	 */
 	flash_status = flash_write_enable_and_verify();
+
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
 
 	if (flash_spi_transmit(tx_buffer, sizeof(tx_buffer)) != HAL_OK) {
+
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
-	return flash_wait_while_busy(FLASH_CHIP_ERASE_TIMEOUT_MS);
-
+	/*
+	 * Chip Erase is intentionally blocking at this layer.
+	 * The Flash Logger task treats it as a rare service operation.
+	 */
+	return flash_wait_while_busy(
+	FLASH_CHIP_ERASE_TIMEOUT_MS);
 }

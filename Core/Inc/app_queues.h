@@ -13,13 +13,14 @@
 #include "modbus_protocol.h"
 
 /**
- * @brief One measurement cycle's result, passed from Modbus Poller to
- *        any task that needs to react to it (currently: Alarm Manager).
+ * @brief Measurement result passed between application tasks.
  *
- * When status != MODBUS_OK, voltage/current/temperature are zeroed -
- * receivers MUST check status before trusting the measurement fields.
+ * ModbusPollerTask fills this structure after each polling cycle.
+ *
+ * When status is not MODBUS_OK, the measurement values are considered
+ * invalid and are set to zero. Consumers must check status before using
+ * voltage, current or temperature.
  */
-
 typedef struct {
 	float voltage;
 	float current;
@@ -27,18 +28,45 @@ typedef struct {
 	ModbusStatus_t status;
 } MeasurementRecord_t;
 
-// Handle used by both the sender (Modbus Poller) and the receiver
-// (Alarm Manager) to refer to this specific queue.
+/*
+ * Queue handles shared by the tasks.
+ *
+ * The queue names describe the direction of communication:
+ *
+ * modbusToAlarmQueue
+ *     ModbusPollerTask -> AlarmManagerTask
+ *
+ * modbusToMqttQueue
+ *     ModbusPollerTask -> MqttPublisherTask
+ *
+ * alarmToMqttQueue
+ *     AlarmManagerTask -> MqttPublisherTask
+ *
+ * alarmToFlashQueue
+ *     AlarmManagerTask -> FlashLoggerTask
+ *
+ * flashToAlarmQueue
+ *     FlashLoggerTask -> AlarmManagerTask
+ *
+ * flashCommandQueue
+ *     UART command reception -> FlashLoggerTask
+ *
+ * flashQueueSet
+ *     Set containing alarmToFlashQueue and flashCommandQueue.
+ */
 extern QueueHandle_t modbusToAlarmQueue;
 extern QueueHandle_t modbusToMqttQueue;
 extern QueueHandle_t alarmToMqttQueue;
 extern QueueHandle_t alarmToFlashQueue;
 extern QueueHandle_t flashToAlarmQueue;
 extern QueueHandle_t flashCommandQueue;
-extern QueueHandle_t flashQueueSet;
+extern QueueSetHandle_t flashQueueSet;
+
 /**
- * @brief Creates all inter-task queues. Must be called once, from main(),
- *        before osKernelStart() - same timing rule as AppTaskInit().
+ * @brief Create all application queues and the Flash queue set.
+ *
+ * Must be called once during application initialisation before the
+ * FreeRTOS scheduler is started.
  */
 void AppQueuesInit(void);
 
