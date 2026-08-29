@@ -69,7 +69,7 @@ for reading or erasing that log without touching the main data path.
 │   └── Src/                    # Source
 ├── arduino-modbus-simulator/   # Arduino sketch simulating the Modbus slave
 ├── esp8266-mqtt-bridge/        # ESP8266 UART↔MQTT bridge firmware
-└── node-red-dashboard/         # Dashboard screenshots + the custom function-node code
+└── node-red-dashboard/         # Dashboard screenshots + full flow export (flows.json)
 ```
 
 > Adjust the paths above to match how the files actually end up organized in
@@ -263,10 +263,12 @@ Arduino incident generator cycling through every voltage/current/
 temperature alarm combination, rather than relying only on one-off manual
 tests.
 
-The `node-red-dashboard/` folder in this repository holds screenshots of
-the finished dashboard and the source of the custom function nodes (the
-JSON-parsing and text-building logic described above) — not a full
-importable flow export.
+The `node-red-dashboard/` folder in this repository holds a full flow
+export (`flows.json`, importable directly into Node-RED) plus screenshots
+of the finished dashboard. It depends on the `@flowfuse/node-red-dashboard`
+(v1.30.2) and `@flowfuse/node-red-dashboard-2-ui-led` (v1.1.0) palettes —
+install those before importing, then point the flow's `mqtt-broker`
+config node at your own broker.
 
 ## Communication protocols reference
 
@@ -339,9 +341,10 @@ E,[SPI=<COMMUNICATION|STORAGE>,]S=<NORMAL|MEASUREMENT|COMMUNICATION>[,<channel>=
 3. Before flashing the ESP8266 bridge, replace the placeholder WiFi
    credentials and MQTT broker address in the sketch with your own — **do
    not commit real credentials to source control.**
-4. Recreate the flow in Node-RED, using the function-node code and
-   dashboard screenshots in `node-red-dashboard/` as a reference, and wire
-   its `mqtt in`/`mqtt out` nodes to your own broker.
+4. Install the `@flowfuse/node-red-dashboard` and
+   `@flowfuse/node-red-dashboard-2-ui-led` palettes in Node-RED, then import
+   `node-red-dashboard/flows.json` (Menu → Import) and point its
+   `mqtt-broker` config node at your own broker.
 5. Open a serial terminal on the STM32's `USART2` (ST-Link VCP) to watch
    diagnostic messages and issue `read`/`erase history` commands.
 
