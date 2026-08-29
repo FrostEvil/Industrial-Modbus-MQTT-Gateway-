@@ -13,9 +13,9 @@
 /**
  * @brief Result of Modbus communication or response validation.
  *
- * MODBUS_ERR_EXCEPTION means either a Modbus exception response
- * or an unexpected function code. Both are treated as non-retryable
- * protocol errors in the current application.
+ * MODBUS_ERR_EXCEPTION covers both a real Modbus exception response and an
+ * unexpected function code. Both are treated as non-retryable protocol
+ * errors here, so the two cases are not distinguished further.
  */
 typedef enum {
 	MODBUS_OK = 0x00U,
@@ -28,23 +28,22 @@ typedef enum {
 } ModbusStatus_t;
 
 /**
- * @brief Calculate Modbus RTU CRC16.
+ * @brief Calculate Modbus RTU CRC16 (init 0xFFFF, polynomial 0xA001, LSB first).
  *
- * Modbus uses initial value 0xFFFF, polynomial 0xA001
- * and processes the least significant bit first.
- *
- * The input buffer is not modified.
+ * Does not modify the input buffer or append the CRC to it.
  */
 uint16_t modbus_crc16(const uint8_t *data, uint16_t len);
 
 /**
  * @brief Validate a received Modbus response.
  *
- * Validation is performed in this order:
- * length -> slave address -> CRC -> exception/function code -> length.
+ * Checked in this order: length -> slave address -> CRC -> exception /
+ * function code -> length. CRC is checked before anything else in the
+ * frame is trusted, since none of those fields mean anything until frame
+ * integrity is confirmed.
  *
- * CRC is checked before interpreting the remaining fields, because
- * frame contents should not be trusted until their integrity is confirmed.
+ * The expected-length calculation assumes function code 0x03 (Read Holding
+ * Registers); other function codes would need a different formula.
  */
 ModbusStatus_t modbus_validate_frame(
 		const uint8_t *modbus_rx_buffer,

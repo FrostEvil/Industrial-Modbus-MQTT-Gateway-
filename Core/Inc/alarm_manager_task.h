@@ -14,29 +14,19 @@
 /**
  * @brief Overall alarm state reported by AlarmManagerTask.
  *
- * The state describes the source of the current alarm:
- * normal operation, measurement out of range or communication failure.
- *
- * Flash-related faults are kept separately in FlashLoggerAlarmFault_t.
+ * Describes the source of the current alarm: normal, measurement out of
+ * range, or communication failure. Flash-related faults are kept separately
+ * in FlashLoggerAlarmFault_t.
  */
 typedef enum {
-	ALARM_NORMAL = 0x00U,
-	ALARM_MEASUREMENT = 0x01U,
-	ALARM_COMMUNICATION = 0x02U
+	ALARM_NORMAL = 0x00U, ALARM_MEASUREMENT = 0x01U, ALARM_COMMUNICATION = 0x02U
 } AlarmState_t;
 
 /**
  * @brief Alarm state sent from AlarmManagerTask to the MQTT task.
  *
- * alarm_state:
- *     Overall state of the measurement/Modbus part of the system.
- *
- * measurement_bitmask:
- *     Indicates which measurement channels are currently out of range.
- *     Bit 0 = voltage, bit 1 = current, bit 2 = temperature.
- *
- * storage_fault:
- *     Current state of the Flash logging subsystem.
+ * measurement_bitmask: which channels are currently out of range
+ * (bit 0 = voltage, bit 1 = current, bit 2 = temperature).
  */
 typedef struct {
 	AlarmState_t alarm_state;
@@ -48,15 +38,14 @@ typedef struct {
  * @brief Current range state of one measurement channel.
  */
 typedef enum {
-	MEASUREMENT_IN_RANGE = 0,
-	MEASUREMENT_OUT_OF_RANGE = 1
+	MEASUREMENT_IN_RANGE = 0, MEASUREMENT_OUT_OF_RANGE = 1
 } MeasurementRangeStatus_t;
 
 /**
  * @brief Range state of all monitored measurements.
  *
- * The states are stored separately so that each channel can have its own
- * hysteresis and state transition history.
+ * Stored per-channel so each one can have its own hysteresis and
+ * transition history.
  */
 typedef struct {
 	MeasurementRangeStatus_t voltage;

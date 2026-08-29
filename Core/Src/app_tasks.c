@@ -15,11 +15,10 @@
 #include <string.h>
 
 /*
- * Called by FreeRTOS when a task stack overflow is detected.
- *
- * This hook is intended only for fatal error diagnostics. The task name is
- * sent through UART2 and the LED is turned on before interrupts are disabled
- * and the system is stopped.
+ * FreeRTOS calls this on stack overflow. Fatal-error diagnostics only:
+ * signal on LED2 + UART2 with the offending task name, then stop - a stack
+ * overflow can leave the system in an undefined state, so continuing is
+ * not an option.
  */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 	HAL_GPIO_WritePin(
@@ -29,10 +28,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 	HAL_UART_Transmit(&huart2, (uint8_t*) pcTaskName, strlen(pcTaskName),
 	HAL_MAX_DELAY);
 
-	/*
-	 * A stack overflow can leave the system in an undefined state.
-	 * Stop normal execution instead of allowing the application to continue.
-	 */
 	__disable_irq();
 
 	for (;;) {
@@ -40,10 +35,8 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 }
 
 /*
- * Create all application tasks.
- *
- * The tasks use static allocation and are created before the FreeRTOS
- * scheduler is started.
+ * Create all application tasks, statically allocated, before the scheduler
+ * starts.
  */
 void AppTasksInit(void) {
 	ModbusPollerTask_Init();
