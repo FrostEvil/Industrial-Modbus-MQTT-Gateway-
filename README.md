@@ -1,6 +1,6 @@
 # Industrial Modbus → MQTT Gateway
 
-A bare-metal STM32 + FreeRTOS gateway that polls a Modbus RTU slave device
+An STM32 + FreeRTOS gateway that polls a Modbus RTU slave device
 (e.g. a network parameter analyzer), evaluates the readings against
 configurable alarm thresholds, persists alarm-triggering events to external
 SPI Flash, and republishes everything over a lightweight text protocol to an
@@ -13,9 +13,8 @@ visualizes it all.
 
 ## About this project
 
-This is a self-directed learning project built while transitioning from
-electrical/mechatronics engineering into embedded systems. The STM32
-firmware is hand-written C, built specifically to practice FreeRTOS,
+This is an educational project, built for learning embedded systems. The
+STM32 firmware is hand-written C, built specifically to practice FreeRTOS,
 peripheral drivers (UART/DMA, SPI), and defensive protocol design. The
 Arduino simulator and ESP8266 bridge exist to make the STM32 firmware
 testable and demoable without needing a real Modbus analyzer on a bench —
@@ -30,7 +29,6 @@ they're a supporting cast, not the focus of the exercise.
 - [ESP8266 UART↔MQTT bridge](#esp8266-uartmqtt-bridge)
 - [Node-RED dashboard](#node-red-dashboard)
 - [Communication protocols reference](#communication-protocols-reference)
-- [Notable engineering decisions](#notable-engineering-decisions)
 - [Getting started](#getting-started)
 - [Testing & validation](#testing--validation)
 - [Known limitations & roadmap](#known-limitations--roadmap)
@@ -48,10 +46,19 @@ flowchart LR
     B -. "USART2 service console" .-> G["PC terminal<br/>read / erase history"]
 ```
 
+"Modbus RTU" names the binary serial transmission mode of the Modbus
+protocol (as opposed to Modbus ASCII or Modbus TCP) — compact frames with a
+CRC16 checksum, running here over an RS-485 bus. The physical link isn't a
+direct wire between the two boards: it's Arduino → UART-to-RS485 converter →
+RS-485 bus (two-wire, A/B) → RS-485-to-UART converter → STM32. A separate
+wiring diagram (added alongside this README) shows the actual converter
+hardware used on each end.
+
 Data flows in one direction end to end (slave → gateway → bridge → broker →
-dashboard), with two side channels on the STM32: a persistent event log on
-external Flash, and a service console over a second UART for reading or
-erasing that log without touching the main data path.
+dashboard). On the STM32 side, the link to the ESP8266 (UART6) carries that
+main data path, while two further channels sit off to the side: a
+persistent event log on external Flash, and a service console over USART2
+for reading or erasing that log without touching the main data path.
 
 ## Repository structure
 
@@ -62,7 +69,7 @@ erasing that log without touching the main data path.
 │   └── Src/                    # Source
 ├── arduino-modbus-simulator/   # Arduino sketch simulating the Modbus slave
 ├── esp8266-mqtt-bridge/        # ESP8266 UART↔MQTT bridge firmware
-└── node-red-dashboard/         # Node-RED flow export for the dashboard
+└── node-red-dashboard/         # Dashboard screenshots + the custom function-node code
 ```
 
 > Adjust the paths above to match how the files actually end up organized in
@@ -72,9 +79,8 @@ erasing that log without touching the main data path.
 ## STM32 Modbus↔MQTT Gateway
 
 The core of the project. Runs on an STM32F401 (Nucleo-64 form factor),
-clocked at 84 MHz, on FreeRTOS v10.3.1 with **fully static allocation** — no
-heap fragmentation risk, every task/queue/semaphore's memory footprint is
-known at compile time.
+clocked at 84 MHz, on FreeRTOS v10.3.1, with every task, queue, and
+semaphore statically allocated at compile time.
 
 ### Responsibilities
 
@@ -97,7 +103,7 @@ known at compile time.
 
 ```mermaid
 flowchart TB
-    ModbusPoller["ModbusPollerTask<br/>priority 5"] -->|MeasurementRecord| AlarmManager["AlarmManagerTask<br/>priority 5"]
+    ModbusPoller["ModbusPollerTask<br/>priority 4"] -->|MeasurementRecord| AlarmManager["AlarmManagerTask<br/>priority 3"]
     ModbusPoller -->|MeasurementRecord| MqttPublisher["MqttPublisherTask<br/>priority 2"]
     AlarmManager -->|MqttAlarmState| MqttPublisher
     AlarmManager -->|FlashRecord| FlashLogger["FlashLoggerTask<br/>priority 1"]
@@ -107,8 +113,8 @@ flowchart TB
 
 | Task | Priority | Role |
 |---|---|---|
-| `ModbusPollerTask` | 5 | Polls the slave every 1 s, publishes the result to both `AlarmManagerTask` and `MqttPublisherTask`. |
-| `AlarmManagerTask` | 5 | Applies hysteresis, drives the alarm LEDs, builds the Flash record and the MQTT alarm event. |
+| `ModbusPollerTask` | 4 | Polls the slave every 1 s, publishes the result to both `AlarmManagerTask` and `MqttPublisherTask`. |
+| `AlarmManagerTask` | 3 | Applies hysteresis, drives the alarm LEDs, builds the Flash record and the MQTT alarm event. |
 | `MqttPublisherTask` | 2 | Formats and sends the UART6 text frames consumed by the ESP8266. |
 | `FlashLoggerTask` | 1 | Owns the external Flash: writes new records, and serves `read`/`erase` commands from the service console. Lowest priority on purpose — a Flash erase can take up to ~200 s and must never hold up real-time polling or alarm handling. |
 
@@ -117,13 +123,20 @@ of two patterns: length-1 queues carrying "the latest state" (written with
 `xQueueOverwrite`, since only the newest value matters to the consumer), and
 a length-5 queue for the Flash event log (written with a non-blocking
 `xQueueSend`, since an alarm event that can't be logged right now should be
-dropped rather than stall alarm/LED/MQTT handling).
+dropped rather than stall alarm/LED/MQTT handling). Every point where a
+task waits on something external (a Modbus response, a Flash operation
+finishing) does so through a FreeRTOS semaphore or delay rather than a
+polling loop, so the waiting task actually sleeps instead of spinning.
 
 ### External Flash event log
 
-An external SPI NOR Flash chip (16 MB, standard JEDEC command set — Write
-Enable, Read Status Register, JEDEC ID, Read/Page Program/Sector Erase/Chip
-Erase) stores a linear, append-only log of 20-byte records:
+An external SPI NOR Flash chip (a Winbond W25Q128, 16 MB) stores a linear,
+append-only log of 20-byte records, using the standard JEDEC command set —
+Write Enable, Read Status Register, JEDEC ID, Read/Page Program/Sector
+Erase/Chip Erase. "NOR" refers to one of the two common flash memory
+architectures (the other being NAND): NOR flash allows random-access reads
+at the byte level, which makes it straightforward to interface with for a
+log like this one, at the cost of slower writes/erases than NAND.
 
 ```c
 typedef struct {
@@ -135,6 +148,12 @@ typedef struct {
     uint16_t crc;            // CRC16 over everything before this field
 } FlashRecord_t;
 ```
+
+Records are read back with a single `memcpy` of the whole struct rather
+than field-by-field at fixed byte offsets, backed by a compile-time
+`_Static_assert` that ties the struct's size to the on-disk record size —
+so a future change to `FlashRecord_t` fails the build instead of silently
+misreading historical data.
 
 Records are only written on an alarm state **transition**, not on every
 sample — a communication fault or an out-of-range measurement gets logged
@@ -168,8 +187,8 @@ diagnostic messages (`Error_Handler()` notifications, stack overflow
 reports, Flash status messages).
 
 `USART1` (RS-485/Modbus) and `SPI2` (external Flash) pin assignments are
-configured via STM32CubeMX and aren't reproduced here — check `usart.c` /
-`spi.c` or the project's `.ioc` file for the exact pinout on your board.
+configured via STM32CubeMX and aren't reproduced here — refer to your own
+board's pinout when wiring the hardware.
 
 ## Arduino Modbus slave simulator
 
@@ -244,6 +263,11 @@ Arduino incident generator cycling through every voltage/current/
 temperature alarm combination, rather than relying only on one-off manual
 tests.
 
+The `node-red-dashboard/` folder in this repository holds screenshots of
+the finished dashboard and the source of the custom function nodes (the
+JSON-parsing and text-building logic described above) — not a full
+importable flow export.
+
 ## Communication protocols reference
 
 ### Modbus register map
@@ -287,49 +311,6 @@ E,[SPI=<COMMUNICATION|STORAGE>,]S=<NORMAL|MEASUREMENT|COMMUNICATION>[,<channel>=
 | `read <n>` | Sends the newest `n` (capped at 20) Flash log records over the same UART, newest first. |
 | `erase history` | Erases the entire Flash chip and resets the write position to the start of the log. Takes up to ~200 s. |
 
-## Notable engineering decisions
-
-A few choices worth calling out explicitly, since they're the kind of
-reasoning that doesn't show up just from reading the code:
-
-- **Semaphores over busy-waiting for every blocking wait.** Every point
-  where the firmware waits on something external (a Modbus response, a
-  Flash program/erase operation finishing) uses `xSemaphoreTake` /
-  `vTaskDelay` rather than a tight polling loop on `HAL_GetTick()`. This
-  matters for two reasons: it lets FreeRTOS actually put the waiting task
-  to sleep (freeing the CPU for lower-priority tasks instead of starving
-  them), and it's simply the idiomatic way to synchronize an ISR with a
-  task in FreeRTOS.
-- **A snapshot buffer for the Modbus receive path.** DMA re-arms for the
-  next frame immediately after each response is received, before the task
-  has necessarily finished reading it. The ISR copies the frame into a
-  separate snapshot buffer before re-arming DMA, so the task always
-  validates a copy that nothing else can overwrite mid-read — closing a
-  narrow but real race window on a noisy or shared RS-485 bus.
-- **Explicit timeouts on every wait, including hardware flag polling.**
-  Even the UART "transmission complete" flag wait has a timeout, not just
-  the higher-level Modbus response wait — a hardware fault that never sets
-  that flag would otherwise hang the polling task permanently, with no way
-  to recover short of a reset.
-- **A compile-time guard against silent Flash record corruption.** The
-  Flash log reader copies `FlashRecord_t` in one `memcpy` rather than
-  field-by-field at fixed byte offsets, and a `_Static_assert` next to the
-  struct definition ties its size to the on-disk record size — so a future
-  change to the struct fails the build instead of silently misreading
-  historical data.
-- **Priority assignment reflects real-time importance, not code
-  complexity.** Flash logging is the most complex module in the firmware,
-  but it runs at the lowest priority (1) precisely because it's allowed to
-  take a long time (a full chip erase can take ~200 s) without ever
-  blocking Modbus polling or alarm handling, which stay time-critical at
-  priority 5.
-- **Stage 6 (custom PCB, soldering, real-hardware validation) was
-  deliberately deferred**, in favor of finishing and polishing this
-  firmware and moving on to further, smaller projects. Getting the RTOS
-  usage, protocol handling, and edge cases right on a dev board was judged
-  more valuable at this stage than the multi-week detour of a first custom
-  PCB layout.
-
 ## Getting started
 
 ### Hardware
@@ -358,8 +339,9 @@ reasoning that doesn't show up just from reading the code:
 3. Before flashing the ESP8266 bridge, replace the placeholder WiFi
    credentials and MQTT broker address in the sketch with your own — **do
    not commit real credentials to source control.**
-4. Import the Node-RED flow export and point its `mqtt in`/`mqtt out` nodes
-   at your broker.
+4. Recreate the flow in Node-RED, using the function-node code and
+   dashboard screenshots in `node-red-dashboard/` as a reference, and wire
+   its `mqtt in`/`mqtt out` nodes to your own broker.
 5. Open a serial terminal on the STM32's `USART2` (ST-Link VCP) to watch
    diagnostic messages and issue `read`/`erase history` commands.
 
@@ -388,17 +370,22 @@ reasoning that doesn't show up just from reading the code:
   Flash sector by sector at boot to find the next write position — a
   one-time startup cost that grows as the log fills up (bounded by the
   Flash's total size), not a per-record cost.
-- WiFi/MQTT credentials currently live directly in the ESP8266 source; a
-  separate, gitignored secrets file would be a natural next step before
-  treating this as anything other than a personal/portfolio project.
-- Planned next: a custom PCB and full hardware validation (deliberately
-  scoped out of this phase — see
-  [Notable engineering decisions](#notable-engineering-decisions)), and
-  possibly unit tests for the pure-logic modules (Flash addressing
-  arithmetic, alarm hysteresis) that don't depend on STM32 hardware.
+- The WiFi network name and password are currently typed directly into the
+  ESP8266 source code as plain text. That's fine for a private, unpublished
+  build, but it means anyone reading the published source would see the
+  real credentials. Before treating this as more than a personal project,
+  those values should move into a separate config file that's excluded
+  from version control, so the shared source code never reveals them.
+- This is a testbed, not a finished product. Connecting it to a real
+  Modbus RTU device instead of the Arduino simulator is possible, but would
+  require adapting the Modbus request (register addresses, count, and
+  scaling) to match that device's actual protocol, and possibly reworking
+  the Flash record structure and frame sizes if the data doesn't fit the
+  current three-register layout. A further step beyond that could be a
+  dedicated PCB with a quartz RTC for real wall-clock timestamps, external
+  power, and a permanent connection to a real device.
 
 ## License
 
-Not yet decided. If you're reading this as a portfolio reviewer: treat the
-code as "look, don't reuse" until a license is added. (MIT is the likely
-candidate for a project like this.)
+MIT — free to use, modify, and distribute. (A `LICENSE` file with the full
+MIT text should sit alongside this README.)
