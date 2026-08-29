@@ -19,29 +19,41 @@
 #include "modbus_master.h"
 #include "usart.h"
 #include <string.h>
-#include <stdbool.h>
 #include "FreeRTOS.h"
 #include "semphr.h"
+
+#define MODBUS_TC_TIMEOUT_MS 20U
 
 /*
  * Internal receive state of the Modbus master, private to this module.
  * Higher layers only see modbus_master_poll()'s status code and copied
- * response data, never this buffer directly.
+ * response data, never these buffers directly.
  *
- * volatile is required: written from the UART callback (ISR context),
- * read from task code.
+ * modbus_rx_size is volatile because it's written from the UART callback
+ * (ISR context) and read from task code.
  */
-
-#define MODBUS_TC_TIMEOUT_MS 20U
-
 static volatile uint16_t modbus_rx_size = 0;
-static volatile bool modbus_rx_ready = false;
 
-static uint8_t modbus_rx_buffer[256];     // stale nadpisywany przez DMA
-static uint8_t modbus_rx_snapshot[256];   // stabilna kopia dla taska
+/*
+ * DMA keeps writing into modbus_rx_buffer for as long as USART1 is
+ * receiving, including the next frame - the moment modbus_rx_event() below
+ * re-arms it, this buffer is fair game for DMA again. modbus_rx_snapshot is
+ * the copy the task actually reads: modbus_rx_event() fills it before
+ * re-arming DMA, so the task always has a frame that nothing else is
+ * touching, even if a second frame starts arriving while it's still being
+ * validated.
+ */
+static uint8_t modbus_rx_buffer[256];
+static uint8_t modbus_rx_snapshot[256];
 
+/*
+ * Signals "a response frame just arrived" from modbus_rx_event() (ISR) to
+ * modbus_master_poll() (task). A semaphore is used here instead of polling
+ * a flag so the task can actually block while it waits, instead of sitting
+ * in a busy loop burning CPU.
+ */
 static SemaphoreHandle_t modbus_rx_semaphore;
-static StaticSemaphore_t modbus_rx_sempahore_buffer;
+static StaticSemaphore_t modbus_rx_semaphore_buffer;
 
 /**
  * @brief Start asynchronous DMA reception for Modbus responses.
@@ -53,7 +65,7 @@ static StaticSemaphore_t modbus_rx_sempahore_buffer;
 ModbusStatus_t modbus_master_init(void) {
 
 	modbus_rx_semaphore = xSemaphoreCreateBinaryStatic(
-			&modbus_rx_sempahore_buffer);
+			&modbus_rx_semaphore_buffer);
 
 	HAL_StatusTypeDef hal_status = HAL_UARTEx_ReceiveToIdle_DMA(&huart1,
 			modbus_rx_buffer, sizeof(modbus_rx_buffer));
@@ -165,8 +177,12 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
 	ModbusStatus_t final_status = MODBUS_ERR_TIMEOUT;
 
 	/*
-	 * Drain any stale "give" left over from before this transaction
-	 * (odpowiednik dzisiejszego modbus_rx_ready = false;).
+	 * Take with a zero timeout just to clear out any stale "give" left over
+	 * from before this transaction - e.g. a frame that arrived just after
+	 * the previous poll gave up waiting. Without this, the very first
+	 * xSemaphoreTake() below could immediately return with old data instead
+	 * of actually waiting for the response to the request we're about to
+	 * send.
 	 */
 	xSemaphoreTake(modbus_rx_semaphore, 0);
 
@@ -186,12 +202,13 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
 		}
 
 		/*
-		 * Task śpi tutaj (Blocked), zamiast zajmować CPU w pętli, aż
-		 * modbus_rx_event() da semafor albo minie timeout.
+		 * The task actually sleeps here instead of spinning - it stays
+		 * Blocked until either modbus_rx_event() gives the semaphore from
+		 * the UART callback, or response_timeout_ms runs out.
 		 */
-		if (xQueueSemaphoreTake(modbus_rx_semaphore,
-				pdMS_TO_TICKS(
-						modbus_retry_policy->response_timeout_ms))== pdTRUE) {
+		if (xSemaphoreTake(modbus_rx_semaphore,
+				pdMS_TO_TICKS(modbus_retry_policy->response_timeout_ms))
+				== pdTRUE) {
 
 			attempt_status = modbus_validate_frame(modbus_rx_snapshot,
 					modbus_rx_size, modbus_target->slave_id,
@@ -223,10 +240,10 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
 		}
 
 		/*
-		 * Drain przed kolejną próbą, na wypadek spóźnionej/przypadkowej
-		 * ramki z poprzedniej próby.
+		 * Same reasoning as the take at the top of this function: clear out
+		 * the semaphore before the next attempt, in case a late or
+		 * unrelated frame gives it right after this attempt's timeout.
 		 */
-
 		xSemaphoreTake(modbus_rx_semaphore, 0);
 	}
 
@@ -238,13 +255,15 @@ ModbusStatus_t modbus_master_poll(uint8_t *modbus_tx_buffer,
  *
  * HAL_UART_RXEVENT_IDLE marks the end of the current Modbus RTU response
  * frame (no more bytes for at least one character time). Kept short, as
- * ISR/callback code should be: store the size, mark the buffer ready,
- * re-arm DMA. Frame validation happens later from task context.
+ * ISR/callback code should be: snapshot the frame, mark it ready, re-arm
+ * DMA. Frame validation happens later from task context.
  *
- * TODO: DMA is re-armed immediately below, before modbus_master_poll() has
- * copied this data out. On a noisy or shared RS-485 bus, a second IDLE
- * event could in theory overwrite modbus_rx_buffer while it is still being
- * read. Consider copying into a snapshot buffer here, or double-buffering.
+ * The snapshot copy has to happen before DMA is re-armed at the end of this
+ * function, not after: the instant HAL_UARTEx_ReceiveToIdle_DMA() runs
+ * again, modbus_rx_buffer becomes fair game for the next incoming frame. On
+ * a noisy or shared RS-485 bus that next frame could start arriving almost
+ * immediately, so without this copy the task could end up validating a
+ * buffer that's being overwritten out from under it.
  *
  * @param event UART reception event type reported by HAL.
  * @param Size Number of bytes received before the event.
@@ -253,11 +272,6 @@ void modbus_rx_event(HAL_UART_RxEventTypeTypeDef event, uint16_t Size) {
 
 	if (event == HAL_UART_RXEVENT_IDLE) {
 
-		/*
-		 * Copy out before re-arming below - DMA could start overwriting
-		 * modbus_rx_buffer with a new frame the moment
-		 * HAL_UARTEx_ReceiveToIdle_DMA() is called again.
-		 */
 		memcpy(modbus_rx_snapshot, modbus_rx_buffer, Size);
 		modbus_rx_size = Size;
 

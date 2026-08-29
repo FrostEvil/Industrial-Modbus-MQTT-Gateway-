@@ -31,5 +31,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 	} else if (huart == &huart6) {
 
+		/*
+		 * USART6: link to the ESP8266. The STM32 only ever transmits on
+		 * this link today (measurement/alarm text from MqttPublisherTask) -
+		 * nothing needs to be read back yet, so there's nothing for this
+		 * branch to do.
+		 */
 	}
 }

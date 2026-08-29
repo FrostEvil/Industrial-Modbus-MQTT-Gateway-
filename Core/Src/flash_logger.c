@@ -39,9 +39,9 @@ static char uart2_tx_buffer[192];
 static FlashRecord_t history_buffer[MAX_READ_RECORDS];
 
 /*
- * TODO: is_sector_fully_empty / is_last_record_slot_empty / is_record_empty
- * are three near-identical "all bytes == 0xFF" checks over different
- * ranges. Consider one is_region_erased(buf, offset, len) helper instead.
+ * Shared "is this range still blank?" check, used for a whole sector, the
+ * last record slot in a sector, and a single record - all three are really
+ * the same question, just over a different range.
  */
 static bool is_region_erased(const uint8_t *buf, uint32_t offset, uint32_t len) {
 	for (uint32_t i = 0; i < len; i++) {
@@ -353,15 +353,6 @@ FlashStatus_t flash_logger_erase_history(void) {
 	return flash_erase_chip();
 }
 
-/*
- * TODO: the field-by-field memcpy() below (offsets 0/4/8/12/16/18) relies
- * on FlashRecord_t's natural struct layout matching RECORD_SIZE (20 bytes)
- * exactly. It does today (verified: 3 floats + uint32_t + uint8_t + 1 byte
- * padding + uint16_t = 20 on this target), but adding/reordering a field
- * in FlashRecord_t would silently break these offsets. Worth adding
- * `_Static_assert(sizeof(FlashRecord_t) == RECORD_SIZE, "...")` near the
- * struct definition so a mismatch fails the build instead of corrupting data.
- */
 static FlashStatus_t flash_logger_read_history(
 		const EntryRecordAddress_t *measurement_record_address,
 		uint8_t records_to_read, uint8_t *read_records) {
@@ -457,9 +448,12 @@ static FlashStatus_t flash_logger_read_history(
 
 		/*
 		 * sector_buffer holds exactly what flash_write_data() wrote in
-		 * flash_logger_write_record() - a raw dump of FlashRecord_t. Reading it
-		 * back the same way keeps this in sync automatically if the struct
-		 * changes, no manual offsets to maintain.
+		 * flash_logger_write_record() - a raw dump of FlashRecord_t. Reading
+		 * it back the same way keeps this in sync automatically if the
+		 * struct changes, no manual byte offsets to maintain here. The
+		 * _Static_assert next to the struct definition in flash_logger.h
+		 * still catches it at compile time if FlashRecord_t's size ever
+		 * drifts from RECORD_SIZE.
 		 */
 		memcpy(&flash_record, sector_buffer, sizeof(FlashRecord_t));
 
