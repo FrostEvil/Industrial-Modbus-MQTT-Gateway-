@@ -342,5 +342,5 @@ void AlarmManagerTask_Init(void) {
 
 	alarmManagerTaskHandle = xTaskCreateStatic(AlarmManagerTask, "AlarmManager",
 	ALARM_MANAGER_TASK_STACK_SIZE,
-	NULL, 5, alarmManagerTaskStack, &alarmManagerTaskTCB);
+	NULL, 3, alarmManagerTaskStack, &alarmManagerTaskTCB);
 }

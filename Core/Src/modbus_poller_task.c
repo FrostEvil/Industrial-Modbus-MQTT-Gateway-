@@ -185,5 +185,5 @@ void ModbusPollerTask_Init(void) {
 
 	modbusPollerTaskHandle = xTaskCreateStatic(ModbusPollerTask, "ModbusPoller",
 	MODBUS_POLLER_TASK_STACK_SIZE,
-	NULL, 5, modbusPollerTaskStack, &modbusPollerTaskTCB);
+	NULL, 4, modbusPollerTaskStack, &modbusPollerTaskTCB);
 }
