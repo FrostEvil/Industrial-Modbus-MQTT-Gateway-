@@ -12,10 +12,6 @@
 #include "modbus_poller_task.h"
 #include "flash_logger.h"
 
-/*
- * Queue handles are declared as extern in app_queues.h and are defined
- * here. Each handle identifies one inter-task communication channel.
- */
 QueueHandle_t modbusToAlarmQueue;
 QueueHandle_t modbusToMqttQueue;
 QueueHandle_t alarmToMqttQueue;
@@ -25,13 +21,9 @@ QueueHandle_t flashCommandQueue;
 QueueSetHandle_t flashQueueSet;
 
 /*
- * Queue length is chosen according to the type of information being passed.
- *
- * Queues with length 1 represent the latest state/value. The producer uses
- * xQueueOverwrite(), so an older value is replaced when a new one arrives.
- *
- * alarmToFlashQueue has length 5 because FlashLoggerTask may temporarily
- * be unable to consume events, for example during a long erase operation.
+ * Length-1 queues hold "latest state" (producer uses xQueueOverwrite()).
+ * alarmToFlashQueue is length 5 because FlashLoggerTask may be temporarily
+ * unable to consume events, e.g. during a long erase.
  */
 #define MODBUS_TO_ALARM_QUEUE_LENGTH    1
 #define MODBUS_TO_MQTT_QUEUE_LENGTH     1
@@ -41,18 +33,15 @@ QueueSetHandle_t flashQueueSet;
 #define FLASH_COMMAND_QUEUE_LENGTH      1
 
 /*
- * The queue set contains alarmToFlashQueue and flashCommandQueue.
- * Its length must be at least the sum of the capacities of all queues
- * belonging to the set.
+ * A queue set's length must be at least the sum of the capacities of the
+ * queues that belong to it.
  */
 #define FLASH_QUEUE_SET_LENGTH \
 		(ALARM_TO_FLASH_QUEUE_LENGTH + FLASH_COMMAND_QUEUE_LENGTH)
 
 /*
- * All queues use static allocation.
- *
- * The storage buffer contains the actual queue items, while StaticQueue_t
- * stores the internal control information maintained by FreeRTOS.
+ * All queues use static allocation: storage buffer for the items plus a
+ * StaticQueue_t for FreeRTOS's internal control block.
  */
 static uint8_t modbusToAlarmQueueStorage[MODBUS_TO_ALARM_QUEUE_LENGTH
 		* sizeof(MeasurementRecord_t)];
@@ -85,10 +74,7 @@ static uint8_t flashCommandQueueStorage[FLASH_COMMAND_QUEUE_LENGTH
 static StaticQueue_t flashCommandQueueControlBlock;
 
 void AppQueuesInit(void) {
-	/*
-	 * Each queue stores complete structures rather than pointers.
-	 * FreeRTOS copies the structure into the queue when an item is sent.
-	 */
+
 	modbusToAlarmQueue = xQueueCreateStatic(MODBUS_TO_ALARM_QUEUE_LENGTH,
 			sizeof(MeasurementRecord_t), modbusToAlarmQueueStorage,
 			&modbusToAlarmQueueControlBlock);
@@ -114,12 +100,9 @@ void AppQueuesInit(void) {
 			&flashCommandQueueControlBlock);
 
 	/*
-	 * FlashLoggerTask needs to react to two different sources of work:
-	 *
-	 * alarmToFlashQueue -> record to write
-	 * flashCommandQueue -> READ / ERASE command
-	 *
-	 * Queue Set allows the task to block until either queue becomes ready.
+	 * FlashLoggerTask needs to react to two sources of work (a record to
+	 * write, or a READ/ERASE command) - the queue set lets it block until
+	 * either becomes ready instead of polling both.
 	 */
 	flashQueueSet = xQueueCreateSet(FLASH_QUEUE_SET_LENGTH);
 

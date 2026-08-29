@@ -23,12 +23,12 @@ static StaticTask_t flashLoggerTaskTCB;
 
 static char uart2_tx_buffer[64];
 
+/*
+ * UART2 carries service/debug messages only - not part of the normal
+ * application data path.
+ */
 static void send_uart2_message(const char *message) {
 
-	/*
-	 * UART2 is used only for service/debug messages from the Flash logger.
-	 * These messages are not part of the normal application data path.
-	 */
 	snprintf(uart2_tx_buffer, sizeof(uart2_tx_buffer), "%s", message);
 
 	HAL_UART_Transmit(&huart2, (uint8_t*) uart2_tx_buffer,
@@ -36,68 +36,186 @@ static void send_uart2_message(const char *message) {
 			HAL_MAX_DELAY);
 }
 
-void FlashLoggerTask(void *argument) {
-
+/*
+ * Handle one incoming measurement record: write it to Flash and update the
+ * fault/alarm state based on the result. Does nothing if writes are
+ * currently blocked by STORAGE_FAULT - clearing that requires an explicit
+ * ERASE HISTORY command (see handle_uart_command()).
+ */
+static void handle_new_record(EntryRecordAddress_t *measurement_record_address,
+		FlashLoggerHealth_t *flash_logger_health) {
 	FlashRecord_t flash_record;
+	FlashStatus_t flash_status;
+
+	xQueueReceive(alarmToFlashQueue, &flash_record, 0);
+
+	if (flash_logger_health->alarm_fault == STORAGE_FAULT) {
+		return;
+	}
+
+	flash_status = flash_logger_write_record(&flash_record,
+			measurement_record_address);
 
 	/*
-	 * Contains the address at which the next Flash record should be stored.
-	 * flash_logger_init() determines the correct position after startup
-	 * or after history is erased.
+	 * Communication-level problems are treated as temporary at first.
+	 */
+	if (flash_status == FLASH_STATUS_TIMEOUT
+			|| flash_status == FLASH_STATUS_SPI_ERROR
+			|| flash_status == FLASH_STATUS_WRITE_NOT_ENABLED) {
+
+		flash_logger_health->alarm_counter++;
+
+		flash_logger_health->alarm_fault =
+				(flash_logger_health->alarm_counter >= 5) ?
+						STORAGE_FAULT : COMMUNICATION_FAULT;
+
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health->alarm_fault);
+	}
+
+	/*
+	 * Not temporary - escalate immediately.
+	 */
+	if (flash_status == FLASH_STATUS_INVALID_ADDRESS
+			|| flash_status == FLASH_STATUS_PAGE_OVERFLOW
+			|| flash_status == FLASH_STATUS_INVALID_ARGUMENT
+			|| flash_status == FLASH_STATUS_LOG_CORRUPTED) {
+
+		flash_logger_health->alarm_fault = STORAGE_FAULT;
+
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health->alarm_fault);
+	}
+
+	if (flash_status == FLASH_STATUS_FULL) {
+
+		flash_logger_health->alarm_fault = STORAGE_FAULT;
+
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health->alarm_fault);
+
+		send_uart2_message(
+				"History FULL, you need to take action and erase flash history.\r\n");
+	}
+
+	/*
+	 * A successful write after COMMUNICATION_FAULT confirms Flash is
+	 * working again. STORAGE_FAULT is NOT cleared here - that needs an
+	 * explicit erase.
+	 */
+	if (flash_status == FLASH_STATUS_OK
+			&& flash_logger_health->alarm_fault == COMMUNICATION_FAULT) {
+
+		flash_logger_health->alarm_counter = 0;
+		flash_logger_health->alarm_fault = ALARM_OK;
+
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health->alarm_fault);
+	}
+}
+
+/*
+ * Handle one command received over the service UART: ERASE HISTORY,
+ * READ <n>, or anything unrecognised.
+ */
+static void handle_uart_command(
+		EntryRecordAddress_t *measurement_record_address,
+		FlashLoggerHealth_t *flash_logger_health) {
+	UartCommandFrame_t uart_command_frame;
+	FlashCommand_t flash_command;
+	uint8_t records_to_read = 0;
+	FlashStatus_t flash_status;
+
+	xQueueReceive(flashCommandQueue, &uart_command_frame, 0);
+
+	flash_command = parse_command(&uart_command_frame, &records_to_read);
+
+	if (flash_command == FLASH_CMD_ERASE) {
+
+		send_uart2_message(
+				"Erasing history... This may take up to 200 seconds.\r\n");
+
+		/*
+		 * Synchronous on purpose: a rare service operation, and keeping it
+		 * inside this task means Flash always has a single owner.
+		 */
+		flash_status = flash_logger_erase_history();
+
+		if (flash_status != FLASH_STATUS_OK) {
+
+			send_uart2_message(
+					"Something went wrong. Your history couldn't be erased.\r\n");
+			return;
+		}
+
+		flash_status = flash_logger_init(measurement_record_address);
+
+		if (flash_status != FLASH_STATUS_OK) {
+			Error_Handler();
+		}
+
+		/*
+		 * A clean erase clears both temporary and persistent Flash faults.
+		 */
+		flash_logger_health->alarm_counter = 0;
+		flash_logger_health->alarm_fault = ALARM_OK;
+
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health->alarm_fault);
+
+		send_uart2_message("History erased!\r\n");
+
+	} else if (flash_command == FLASH_CMD_READ) {
+
+		flash_status = flash_logger_send_history(measurement_record_address,
+				records_to_read);
+
+		if (flash_status != FLASH_STATUS_OK) {
+
+			send_uart2_message(
+					"Something went wrong. Your history couldn't be sent back.\r\n");
+		}
+
+	} else if (flash_command == FLASH_CMD_UNKNOWN) {
+
+		send_uart2_message("Unknown command.\r\n");
+	}
+}
+
+void FlashLoggerTask(void *argument) {
+
+	/*
+	 * Address of the next Flash record to write. Recovered from existing
+	 * Flash contents on every start by flash_logger_init(), since the
+	 * write position itself is not stored anywhere non-volatile.
 	 *
-	 * When the log is full, flash_logger_init() sets the address to
-	 * FLASH_END_ADDRESS and returns FLASH_STATUS_FULL.
+	 * FLASH_STATUS_FULL from flash_logger_init() sets this to
+	 * FLASH_END_ADDRESS.
 	 */
 	EntryRecordAddress_t measurement_record_address = { 0 };
 
 	FlashStatus_t flash_status;
+	FlashLoggerHealth_t flash_logger_health;
+	flash_logger_health.alarm_counter = 0;
+	flash_logger_health.alarm_fault = ALARM_OK;
 
 	/*
-	 * Number of consecutive communication-level Flash errors.
-	 *
-	 * Short-lived errors produce COMMUNICATION_FAULT. Five consecutive
-	 * errors escalate to STORAGE_FAULT and stop further automatic writes.
-	 */
-	uint8_t alarm_counter = 0;
-
-	FlashLoggerAlarmFault_t alarm_fault = ALARM_OK;
-
-	UartCommandFrame_t uart_command_frame;
-
-	/*
-	 * Queue set allows this task to wait for two different sources of work:
-	 *
-	 * alarmToFlashQueue -> new record to store
-	 * flashCommandQueue -> READ / ERASE command
+	 * Lets this task block on either source of work: alarmToFlashQueue
+	 * (new record) or flashCommandQueue (READ/ERASE command).
 	 */
 	QueueSetMemberHandle_t activeQueue;
 
-	FlashCommand_t flash_command;
-	uint8_t records_to_read = 0;
-
-	/*
-	 * Recover the current write position from the existing Flash contents.
-	 * This is needed after every restart because the write position itself
-	 * is kept in RAM rather than stored separately in non-volatile memory.
-	 */
 	flash_status = flash_logger_init(&measurement_record_address);
 
 	if (flash_status == FLASH_STATUS_FULL) {
 
 		/*
-		 * A full log is a valid operating state, not an initialisation
-		 * failure. Stop automatic writes and report the condition to
-		 * AlarmManagerTask.
+		 * A full log is a valid operating state, not an init failure.
 		 */
-		alarm_fault = STORAGE_FAULT;
+		flash_logger_health.alarm_fault = STORAGE_FAULT;
 
-		xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
+		xQueueOverwrite(flashToAlarmQueue, &flash_logger_health.alarm_fault);
 
 	} else if (flash_status != FLASH_STATUS_OK) {
 
 		/*
-		 * Any other initialisation error means that the Flash logger
-		 * could not reconstruct a usable state.
+		 * Anything else means the logger could not reconstruct a usable
+		 * state - unrecoverable at this layer.
 		 */
 		Error_Handler();
 	}
@@ -105,175 +223,21 @@ void FlashLoggerTask(void *argument) {
 	for (;;) {
 
 		/*
-		 * Wait until either a new record or a user command is available.
-		 * The task remains blocked without consuming CPU until something
-		 * appears in one of the queues belonging to the queue set.
+		 * Blocks here without consuming CPU until either queue in the set
+		 * has something.
 		 */
 		activeQueue = xQueueSelectFromSet(flashQueueSet,
 		portMAX_DELAY);
 
 		if (activeQueue == alarmToFlashQueue) {
 
-			/*
-			 * xQueueSelectFromSet() already confirmed that the queue
-			 * contains an item, so the receive itself does not need to wait.
-			 */
-			xQueueReceive(alarmToFlashQueue, &flash_record, 0);
-
-			/*
-			 * Once STORAGE_FAULT is reached, automatic writes are blocked.
-			 * The user must erase the history before logging can resume.
-			 */
-			if (alarm_fault != STORAGE_FAULT) {
-
-				flash_status = flash_logger_write_record(&flash_record,
-						&measurement_record_address);
-
-				/*
-				 * These errors indicate communication-level problems with
-				 * the Flash device. A small number of consecutive errors
-				 * is treated as temporary.
-				 */
-				if (flash_status == FLASH_STATUS_TIMEOUT
-						|| flash_status == FLASH_STATUS_SPI_ERROR
-						|| flash_status == FLASH_STATUS_WRITE_NOT_ENABLED) {
-
-					alarm_counter++;
-
-					if (alarm_counter >= 5) {
-
-						/*
-						 * Five consecutive failures indicate that the
-						 * problem is persistent. Further writes are blocked.
-						 */
-						alarm_fault = STORAGE_FAULT;
-
-						xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-
-					} else {
-
-						alarm_fault = COMMUNICATION_FAULT;
-
-						xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-					}
-				}
-
-				/*
-				 * These statuses indicate an invalid argument, address,
-				 * page transition or corrupted log state. Unlike temporary
-				 * communication failures, they immediately escalate to
-				 * STORAGE_FAULT.
-				 */
-				if (flash_status == FLASH_STATUS_INVALID_ADDRESS
-						|| flash_status == FLASH_STATUS_PAGE_OVERFLOW
-						|| flash_status == FLASH_STATUS_INVALID_ARGUMENT
-						|| flash_status == FLASH_STATUS_LOG_CORRUPTED) {
-
-					alarm_fault = STORAGE_FAULT;
-
-					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-				}
-
-				if (flash_status == FLASH_STATUS_FULL) {
-
-					/*
-					 * The log has consumed all available storage.
-					 * This is not a hardware failure, but automatic writes
-					 * must stop until the user erases the history.
-					 */
-					alarm_fault = STORAGE_FAULT;
-
-					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-
-					send_uart2_message(
-							"History FULL, you need to take action and erase flash history.\r\n");
-				}
-
-				/*
-				 * A successful write after a temporary communication fault
-				 * confirms that the Flash is working again.
-				 *
-				 * STORAGE_FAULT is intentionally not cleared here. That
-				 * state requires an explicit ERASE HISTORY operation.
-				 */
-				if (flash_status == FLASH_STATUS_OK
-						&& alarm_fault == COMMUNICATION_FAULT) {
-
-					alarm_counter = 0;
-					alarm_fault = ALARM_OK;
-
-					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-				}
-			}
+			handle_new_record(&measurement_record_address,
+					&flash_logger_health);
 
 		} else if (activeQueue == flashCommandQueue) {
 
-			xQueueReceive(flashCommandQueue, &uart_command_frame, 0);
-
-			flash_command = parse_command(&uart_command_frame,
-					&records_to_read);
-
-			if (flash_command == FLASH_CMD_ERASE) {
-
-				send_uart2_message(
-						"Erasing history... This may take up to 200 seconds.\r\n");
-
-				/*
-				 * Erasing the entire chip is intentionally synchronous.
-				 * It is a rare service operation and keeping it inside
-				 * this task ensures that Flash has only one owner.
-				 */
-				flash_status = flash_logger_erase_history();
-
-				if (flash_status != FLASH_STATUS_OK) {
-
-					send_uart2_message(
-							"Something went wrong. Your history couldn't be erased.\r\n");
-
-				} else {
-
-					/*
-					 * Reinitialise the logger after erase so that the write
-					 * position points to the first record slot again.
-					 */
-					flash_status = flash_logger_init(
-							&measurement_record_address);
-
-					if (flash_status != FLASH_STATUS_OK) {
-						Error_Handler();
-					}
-
-					/*
-					 * A successful erase restores a known clean storage
-					 * state, so temporary and persistent Flash faults can
-					 * be cleared.
-					 */
-					alarm_counter = 0;
-					alarm_fault = ALARM_OK;
-
-					xQueueOverwrite(flashToAlarmQueue, &alarm_fault);
-
-					send_uart2_message("History erased!\r\n");
-				}
-
-			} else if (flash_command == FLASH_CMD_READ) {
-
-				/*
-				 * Read history without changing the stored data.
-				 */
-				flash_status = flash_logger_send_history(
-						&measurement_record_address, records_to_read);
-
-				if (flash_status != FLASH_STATUS_OK) {
-
-					send_uart2_message(
-							"Something went wrong. Your history couldn't be sent back.\r\n");
-				}
-
-			} else if (flash_command == FLASH_CMD_UNKNOWN) {
-
-				send_uart2_message("Unknown command.\r\n");
-			}
+			handle_uart_command(&measurement_record_address,
+					&flash_logger_health);
 		}
 	}
 }

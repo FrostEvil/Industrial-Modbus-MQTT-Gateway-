@@ -15,11 +15,9 @@
 /**
  * @brief Measurement result passed between application tasks.
  *
- * ModbusPollerTask fills this structure after each polling cycle.
- *
- * When status is not MODBUS_OK, the measurement values are considered
- * invalid and are set to zero. Consumers must check status before using
- * voltage, current or temperature.
+ * Filled by ModbusPollerTask after each polling cycle. When status is not
+ * MODBUS_OK, voltage/current/temperature are zero and must not be treated
+ * as valid readings - consumers check status first.
  */
 typedef struct {
 	float voltage;
@@ -29,30 +27,15 @@ typedef struct {
 } MeasurementRecord_t;
 
 /*
- * Queue handles shared by the tasks.
+ * Queue handles shared by the tasks. Names describe the direction:
  *
- * The queue names describe the direction of communication:
- *
- * modbusToAlarmQueue
- *     ModbusPollerTask -> AlarmManagerTask
- *
- * modbusToMqttQueue
- *     ModbusPollerTask -> MqttPublisherTask
- *
- * alarmToMqttQueue
- *     AlarmManagerTask -> MqttPublisherTask
- *
- * alarmToFlashQueue
- *     AlarmManagerTask -> FlashLoggerTask
- *
- * flashToAlarmQueue
- *     FlashLoggerTask -> AlarmManagerTask
- *
- * flashCommandQueue
- *     UART command reception -> FlashLoggerTask
- *
- * flashQueueSet
- *     Set containing alarmToFlashQueue and flashCommandQueue.
+ * modbusToAlarmQueue   ModbusPollerTask -> AlarmManagerTask
+ * modbusToMqttQueue    ModbusPollerTask -> MqttPublisherTask
+ * alarmToMqttQueue     AlarmManagerTask -> MqttPublisherTask
+ * alarmToFlashQueue    AlarmManagerTask -> FlashLoggerTask
+ * flashToAlarmQueue    FlashLoggerTask  -> AlarmManagerTask
+ * flashCommandQueue    UART command reception -> FlashLoggerTask
+ * flashQueueSet        Set containing alarmToFlashQueue and flashCommandQueue
  */
 extern QueueHandle_t modbusToAlarmQueue;
 extern QueueHandle_t modbusToMqttQueue;

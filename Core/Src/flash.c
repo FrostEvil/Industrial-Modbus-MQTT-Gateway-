@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include "gpio.h"
 #include "spi.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define FLASH_SIZE_BYTES                0x01000000UL
 #define FLASH_PAGE_SIZE                0x0100U
@@ -31,10 +33,8 @@
 #define FLASH_STATUS_REG1_WEL_BIT      0x02U
 
 /*
- * Send a complete SPI transaction with one continuous CS assertion.
- *
- * This helper is used when the entire transaction consists only of bytes
- * transmitted to the Flash, for example Write Enable or Sector Erase.
+ * One continuous SPI transaction (single CS assertion), for commands that
+ * only transmit bytes, e.g. Write Enable or Sector Erase.
  */
 static HAL_StatusTypeDef flash_spi_transmit(const uint8_t *tx_buffer,
 		uint16_t size) {
@@ -55,11 +55,9 @@ static HAL_StatusTypeDef flash_spi_transmit(const uint8_t *tx_buffer,
 }
 
 /*
- * Send two consecutive parts of one SPI transaction.
- *
- * CS stays low between the two HAL_SPI_Transmit() calls. This matters for
- * commands such as Page Program, where the Flash expects the command,
- * address and data to belong to one SPI transaction.
+ * Two consecutive transmits with CS held low the whole time - needed for
+ * commands like Page Program, where command + address + data must belong
+ * to one SPI transaction.
  */
 static HAL_StatusTypeDef flash_spi_transmit_command_and_data(
 		const uint8_t *tx_buffer_first, uint16_t size_first,
@@ -94,12 +92,8 @@ static HAL_StatusTypeDef flash_spi_transmit_command_and_data(
 }
 
 /*
- * Perform a command followed by a read within one continuous SPI
- * transaction.
- *
- * The Flash needs CS to remain low between sending the command and reading
- * the response. This helper is used for operations such as reading the JEDEC
- * ID or Status Register.
+ * Command followed by a read within one continuous transaction (CS stays
+ * low between the write and the read) - used for JEDEC ID / Status Register.
  */
 static HAL_StatusTypeDef flash_spi_transfer(const uint8_t *tx_buffer,
 		uint16_t tx_size, uint8_t *rx_buffer, uint16_t rx_size) {
@@ -133,10 +127,8 @@ static HAL_StatusTypeDef flash_spi_transfer(const uint8_t *tx_buffer,
 }
 
 /*
- * Send the Write Enable command.
- *
- * NOR Flash requires the WEL (Write Enable Latch) bit to be set before
- * program or erase operations can be accepted.
+ * NOR Flash requires the WEL (Write Enable Latch) bit set before it accepts
+ * a program or erase command.
  */
 static FlashStatus_t flash_write_enable(void) {
 	const uint8_t write_enable_tx_buffer[] = {
@@ -167,10 +159,6 @@ FlashStatus_t flash_read_jedec_id(FlashJedecId_t *jedec_id) {
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
-	/*
-	 * JEDEC ID consists of three bytes:
-	 * manufacturer ID, memory type and device capacity.
-	 */
 	jedec_id->manufacturer_id = rx_buffer[0];
 	jedec_id->memory_type = rx_buffer[1];
 	jedec_id->capacity = rx_buffer[2];
@@ -179,11 +167,8 @@ FlashStatus_t flash_read_jedec_id(FlashJedecId_t *jedec_id) {
 }
 
 /*
- * Read Status Register 1.
- *
- * BUSY tells whether an internal program/erase operation is still running.
- * WEL tells whether Write Enable has successfully prepared the device for
- * the next write/erase command.
+ * Status Register 1: BUSY = internal program/erase still running,
+ * WEL = Write Enable accepted.
  */
 static FlashStatus_t flash_read_status_register(uint8_t *status_register) {
 	if (status_register == NULL) {
@@ -202,8 +187,8 @@ static FlashStatus_t flash_read_status_register(uint8_t *status_register) {
 	}
 
 	/*
-	 * The first received byte corresponds to the command phase.
-	 * The second byte contains Status Register 1.
+	 * rx_buffer[0] corresponds to the command phase; the register is in
+	 * rx_buffer[1].
 	 */
 	*status_register = rx_buffer[1];
 
@@ -230,10 +215,8 @@ FlashStatus_t flash_is_write_enabled(uint8_t *write_enabled) {
 }
 
 /*
- * Execute Write Enable and verify that the Flash accepted it.
- *
- * Checking WEL makes the higher layer aware of a failed preparation step
- * instead of blindly starting a program/erase operation.
+ * Send Write Enable and verify the Flash actually accepted it, instead of
+ * blindly starting a program/erase after just sending the command.
  */
 static FlashStatus_t flash_write_enable_and_verify(void) {
 	FlashStatus_t flash_status;
@@ -278,15 +261,11 @@ FlashStatus_t flash_is_busy(uint8_t *busy) {
 }
 
 /*
- * Wait until the Flash finishes its internal operation.
- *
- * Page Program and Erase commands return before the Flash has actually
- * finished modifying its memory cells. During that time the BUSY bit remains
- * set in Status Register 1.
- *
- * The timeout prevents the task from waiting forever if the device stops
- * responding or remains busy unexpectedly.
+ * Page Program / Erase return before the Flash has actually finished
+ * modifying cells; BUSY stays set until then. timeout guards against the
+ * device never clearing BUSY.
  */
+
 static FlashStatus_t flash_wait_while_busy(uint32_t timeout) {
 	FlashStatus_t flash_status;
 	uint8_t status_register;
@@ -307,6 +286,8 @@ static FlashStatus_t flash_wait_while_busy(uint32_t timeout) {
 		if (HAL_GetTick() - start_time >= timeout) {
 			return FLASH_STATUS_TIMEOUT;
 		}
+
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
@@ -316,9 +297,8 @@ FlashStatus_t flash_read_data(uint32_t address, uint8_t *data, uint16_t length) 
 	}
 
 	/*
-	 * Check both the starting address and the complete requested range.
-	 *
-	 * The subtraction form avoids integer overflow in address + length.
+	 * Subtraction form avoids overflow in address + length for large
+	 * uint32_t values.
 	 */
 	if (address >= FLASH_SIZE_BYTES || length > FLASH_SIZE_BYTES - address) {
 
@@ -346,18 +326,14 @@ FlashStatus_t flash_write_data(uint32_t address, const uint8_t *data,
 		return FLASH_STATUS_INVALID_ARGUMENT;
 	}
 
-	/*
-	 * The complete write must fit inside the physical Flash address space.
-	 * The subtraction form avoids overflow in address + length.
-	 */
 	if (address >= FLASH_SIZE_BYTES || length > FLASH_SIZE_BYTES - address) {
 
 		return FLASH_STATUS_INVALID_ADDRESS;
 	}
 
 	/*
-	 * Page Program cannot cross a 256-byte page boundary.
-	 * The logger therefore guarantees that every record fits in one page.
+	 * Page Program cannot cross a 256-byte page boundary - the logger
+	 * guarantees every record fits in one page.
 	 */
 	if ((address & 0xFFU) + length > FLASH_PAGE_SIZE) {
 		return FLASH_STATUS_PAGE_OVERFLOW;
@@ -367,28 +343,18 @@ FlashStatus_t flash_write_data(uint32_t address, const uint8_t *data,
 	FLASH_CMD_PAGE_PROGRAM, (uint8_t) (address >> 16), (uint8_t) (address >> 8),
 			(uint8_t) address };
 
-	/*
-	 * Every Page Program operation must be preceded by Write Enable.
-	 */
 	flash_status = flash_write_enable_and_verify();
 
 	if (flash_status != FLASH_STATUS_OK) {
 		return flash_status;
 	}
 
-	/*
-	 * Command, address and data must be transmitted while CS remains low.
-	 */
 	if (flash_spi_transmit_command_and_data(tx_buffer, sizeof(tx_buffer), data,
 			length) != HAL_OK) {
 
 		return FLASH_STATUS_SPI_ERROR;
 	}
 
-	/*
-	 * Page Program starts an internal programming operation. Wait until the
-	 * device clears BUSY before allowing another operation.
-	 */
 	return flash_wait_while_busy(
 	FLASH_PAGE_PROGRAM_TIMEOUT_MS);
 }
@@ -405,9 +371,6 @@ FlashStatus_t flash_erase_sector(uint32_t address) {
 
 	FlashStatus_t flash_status;
 
-	/*
-	 * Sector Erase also requires the Write Enable latch.
-	 */
 	flash_status = flash_write_enable_and_verify();
 
 	if (flash_status != FLASH_STATUS_OK) {
@@ -429,10 +392,6 @@ FlashStatus_t flash_erase_chip(void) {
 	const uint8_t tx_buffer[] = {
 	FLASH_CMD_CHIP_ERASE };
 
-	/*
-	 * Chip Erase is protected by the same Write Enable mechanism as
-	 * Page Program and Sector Erase.
-	 */
 	flash_status = flash_write_enable_and_verify();
 
 	if (flash_status != FLASH_STATUS_OK) {
@@ -445,8 +404,9 @@ FlashStatus_t flash_erase_chip(void) {
 	}
 
 	/*
-	 * Chip Erase is intentionally blocking at this layer.
-	 * The Flash Logger task treats it as a rare service operation.
+	 * Intentionally blocking here - a rare service operation, and
+	 * FlashLoggerTask's priority (1, lowest of the app tasks) means it
+	 * won't hold up Modbus/Alarm/MQTT while it runs.
 	 */
 	return flash_wait_while_busy(
 	FLASH_CHIP_ERASE_TIMEOUT_MS);

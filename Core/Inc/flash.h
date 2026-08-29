@@ -12,10 +12,6 @@
 
 /**
  * @brief Result of an external Flash memory operation.
- *
- * The status is returned by the low-level Flash driver and allows higher
- * layers to distinguish between invalid input, communication problems and
- * Flash-specific conditions.
  */
 typedef enum {
 	FLASH_STATUS_OK = 0,
@@ -30,10 +26,8 @@ typedef enum {
 } FlashStatus_t;
 
 /**
- * @brief JEDEC identification returned by the Flash device.
- *
- * The three fields are the standard bytes returned by the JEDEC ID command:
- * manufacturer ID, memory type and device capacity.
+ * @brief JEDEC identification returned by the Flash device: manufacturer
+ * ID, memory type and device capacity.
  */
 typedef struct {
 	uint8_t manufacturer_id;
@@ -57,41 +51,34 @@ FlashStatus_t flash_read_data(uint32_t address, uint8_t *data, uint16_t length);
 /**
  * @brief Program raw data into the Flash memory.
  *
- * The write must fit inside one 256-byte Flash page. Page boundary handling
- * is deliberately left to the caller instead of splitting the operation
- * automatically.
+ * Must fit inside one 256-byte page. Page boundary handling is left to the
+ * caller rather than split automatically.
  */
 FlashStatus_t flash_write_data(uint32_t address, const uint8_t *data,
 		uint16_t length);
 
 /**
- * @brief Erase one 4 KB Flash sector.
- *
- * The address must point to the beginning of a sector.
+ * @brief Erase one 4 KB Flash sector. Address must be sector-aligned.
  */
 FlashStatus_t flash_erase_sector(uint32_t address);
 
 /**
- * @brief Check whether the Flash is currently busy.
- *
- * The returned value is non-zero while an internal program or erase
- * operation is still in progress.
+ * @brief Check whether the Flash is currently busy with an internal
+ * program/erase operation.
  */
 FlashStatus_t flash_is_busy(uint8_t *busy);
 
 /**
- * @brief Check whether the Flash Write Enable Latch is set.
- *
- * The returned value is non-zero when the device has accepted the
- * Write Enable command and is ready for a program or erase operation.
+ * @brief Check whether the Flash Write Enable Latch is set (device has
+ * accepted Write Enable and is ready for a program/erase operation).
  */
 FlashStatus_t flash_is_write_enabled(uint8_t *write_enabled);
 
 /**
  * @brief Erase the entire Flash chip.
  *
- * This is a long-running operation. The driver waits until the chip
- * finishes the erase or the configured timeout is reached.
+ * Long-running; the driver blocks until the chip finishes or the
+ * configured timeout is reached.
  */
 FlashStatus_t flash_erase_chip(void);
 
