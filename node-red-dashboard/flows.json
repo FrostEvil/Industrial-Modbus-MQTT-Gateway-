@@ -638,7 +638,7 @@
         "id": "0184e08155ca5db7",
         "type": "mqtt-broker",
         "name": "Home",
-        "broker": "192.168.1.22:1883",
+        "broker": "YOUR_BROKER_IP:1883",
         "port": 1883,
         "clientid": "",
         "autoConnect": true,
