@@ -1,0 +1,851 @@
+[
+    {
+        "id": "df9f0f5e099aca5e",
+        "type": "tab",
+        "label": "Project_1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "12f49a39c126395c",
+        "type": "mqtt in",
+        "z": "df9f0f5e099aca5e",
+        "name": "",
+        "topic": "project/measurements",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "0184e08155ca5db7",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 140,
+        "y": 40,
+        "wires": [
+            [
+                "976ffaadfbb0bd28",
+                "fd2eb4a94f4b2ea7",
+                "1f87fb22e586de60",
+                "aed70f7923c66c9f"
+            ]
+        ]
+    },
+    {
+        "id": "976ffaadfbb0bd28",
+        "type": "ui-gauge",
+        "z": "df9f0f5e099aca5e",
+        "name": "Voltage",
+        "group": "195258fbd880adcc",
+        "order": 1,
+        "value": "msg.payload.voltage",
+        "valueType": "msg",
+        "width": 3,
+        "height": "3",
+        "gtype": "gauge-half",
+        "gstyle": "needle",
+        "title": "Voltage",
+        "alwaysShowTitle": false,
+        "floatingTitlePosition": "top-left",
+        "units": "[U]",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "0",
+                "color": "#ff0000",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "207",
+                "color": "#00ff00",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "257",
+                "color": "#ff0000",
+                "text": "",
+                "textType": "label"
+            }
+        ],
+        "min": "0",
+        "max": "300",
+        "sizeThickness": "12",
+        "sizeGap": "4",
+        "sizeKeyThickness": "8",
+        "styleRounded": true,
+        "styleGlow": false,
+        "className": "",
+        "x": 500,
+        "y": 200,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "fd2eb4a94f4b2ea7",
+        "type": "ui-gauge",
+        "z": "df9f0f5e099aca5e",
+        "name": "Current",
+        "group": "195258fbd880adcc",
+        "order": 2,
+        "value": "msg.payload.current",
+        "valueType": "msg",
+        "width": 3,
+        "height": 3,
+        "gtype": "gauge-half",
+        "gstyle": "needle",
+        "title": "Current",
+        "alwaysShowTitle": false,
+        "floatingTitlePosition": "top-left",
+        "units": "[A]",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "0",
+                "color": "#5cd65c",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "25",
+                "color": "#ff0000",
+                "text": "",
+                "textType": "label"
+            }
+        ],
+        "min": "0",
+        "max": "40",
+        "sizeThickness": "12",
+        "sizeGap": 4,
+        "sizeKeyThickness": 8,
+        "styleRounded": true,
+        "styleGlow": false,
+        "className": "",
+        "x": 500,
+        "y": 260,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "bdbde58ceb33bf45",
+        "type": "function",
+        "z": "df9f0f5e099aca5e",
+        "name": "function 1",
+        "func": "\nlet parts = [];\n\nif (msg.payload.SPI === 'COMMUNICATION') parts.push('SPI communication fault!');\nelse if (msg.payload.SPI === 'STORAGE') parts.push('SPI storage fault!');\n\nif (msg.payload.S === 'MEASUREMENT') parts.push('Measurement out of range!');\nelse if (msg.payload.S === 'COMMUNICATION') parts.push('Modbus communication lost!');\n\nmsg.payload = parts.length > 0 ? ('Alarm: ' + parts.join(' + ')) : 'All systems normal.';\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 400,
+        "wires": [
+            [
+                "84843526e61acbc8"
+            ]
+        ]
+    },
+    {
+        "id": "aa63bd7d5c9a4e32",
+        "type": "mqtt in",
+        "z": "df9f0f5e099aca5e",
+        "name": "",
+        "topic": "project/events",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "0184e08155ca5db7",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 110,
+        "y": 400,
+        "wires": [
+            [
+                "bdbde58ceb33bf45",
+                "ceecfcefb73946cb"
+            ]
+        ]
+    },
+    {
+        "id": "84843526e61acbc8",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "b0aac6830f6940d3",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "name": "Alarm",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#ff0000",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 770,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "ceecfcefb73946cb",
+        "type": "function",
+        "z": "df9f0f5e099aca5e",
+        "name": "function 2",
+        "func": "let initialized = flow.get('ledInitialized') || { V: false, I: false, T: false };\nlet outputs = [null, null, null];\n\nif (msg.payload.V !== undefined) {\n    outputs[0] = { payload: msg.payload.V };\n    initialized.V = true;\n} else if (!initialized.V) {\n    outputs[0] = { payload: \"IN\" };  // nigdy nie bylo danych -- zakladamy normalny stan startowy\n    initialized.V = true;\n}\n\nif (msg.payload.I !== undefined) {\n    outputs[1] = { payload: msg.payload.I };\n    initialized.I = true;\n} else if (!initialized.I) {\n    outputs[1] = { payload: \"IN\" };\n    initialized.I = true;\n}\n\nif (msg.payload.T !== undefined) {\n    outputs[2] = { payload: msg.payload.T };\n    initialized.T = true;\n} else if (!initialized.T) {\n    outputs[2] = { payload: \"IN\" };\n    initialized.T = true;\n}\n\nflow.set('ledInitialized', initialized);\nreturn outputs;",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 500,
+        "wires": [
+            [
+                "c04db646f0f2bdf2",
+                "1226e695783c7e27"
+            ],
+            [
+                "94c7344f0cda882c"
+            ],
+            [
+                "b5fdf56ecebba467"
+            ]
+        ]
+    },
+    {
+        "id": "c04db646f0f2bdf2",
+        "type": "ui-led",
+        "z": "df9f0f5e099aca5e",
+        "name": "Voltage",
+        "group": "be53c48b28fab8e8",
+        "order": 2,
+        "width": "1",
+        "height": "1",
+        "label": "",
+        "labelPlacement": "right",
+        "labelAlignment": "center",
+        "states": [
+            {
+                "value": "OUT",
+                "valueType": "str",
+                "color": "#ff0000"
+            },
+            {
+                "value": "IN",
+                "valueType": "str",
+                "color": "#00ff00"
+            }
+        ],
+        "allowColorForValueInMessage": false,
+        "shape": "circle",
+        "showBorder": false,
+        "showGlow": false,
+        "x": 780,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "94c7344f0cda882c",
+        "type": "ui-led",
+        "z": "df9f0f5e099aca5e",
+        "name": "Current",
+        "group": "4a107ca3f7bb1989",
+        "order": 2,
+        "width": "1",
+        "height": "1",
+        "label": "",
+        "labelPlacement": "right",
+        "labelAlignment": "center",
+        "states": [
+            {
+                "value": "OUT",
+                "valueType": "str",
+                "color": "#ff0000"
+            },
+            {
+                "value": "IN",
+                "valueType": "str",
+                "color": "#00ff00"
+            }
+        ],
+        "allowColorForValueInMessage": false,
+        "shape": "circle",
+        "showBorder": false,
+        "showGlow": false,
+        "x": 780,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "b5fdf56ecebba467",
+        "type": "ui-led",
+        "z": "df9f0f5e099aca5e",
+        "name": "Temperature",
+        "group": "d7c767d1bb55513d",
+        "order": 2,
+        "width": "1",
+        "height": "1",
+        "label": "",
+        "labelPlacement": "right",
+        "labelAlignment": "center",
+        "states": [
+            {
+                "value": "OUT",
+                "valueType": "str",
+                "color": "#ff0000"
+            },
+            {
+                "value": "IN",
+                "valueType": "str",
+                "color": "#00ff00"
+            }
+        ],
+        "allowColorForValueInMessage": false,
+        "shape": "circle",
+        "showBorder": false,
+        "showGlow": false,
+        "x": 790,
+        "y": 620,
+        "wires": []
+    },
+    {
+        "id": "1f87fb22e586de60",
+        "type": "function",
+        "z": "df9f0f5e099aca5e",
+        "name": "function 3",
+        "func": "return [\n    { payload: `VOLTAGE:  ${msg.payload.voltage} V` },\n    { payload: `CURRENT:  ${msg.payload.current} A` },\n    { payload: `TEMPERATURE:  ${msg.payload.temperature} °C` }\n];",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 40,
+        "wires": [
+            [
+                "621ed53112ec53e3"
+            ],
+            [
+                "5fab1c9e8914f98c"
+            ],
+            [
+                "a8311ef434168008"
+            ]
+        ]
+    },
+    {
+        "id": "621ed53112ec53e3",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "be53c48b28fab8e8",
+        "order": 1,
+        "width": "2",
+        "height": "1",
+        "name": "Voltage",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#000000",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 780,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "5fab1c9e8914f98c",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "4a107ca3f7bb1989",
+        "order": 1,
+        "width": "2",
+        "height": "1",
+        "name": "Current",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#000000",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 780,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "a8311ef434168008",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "d7c767d1bb55513d",
+        "order": 1,
+        "width": "2",
+        "height": "1",
+        "name": "Temperature",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#000000",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 790,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "aed70f7923c66c9f",
+        "type": "ui-gauge",
+        "z": "df9f0f5e099aca5e",
+        "name": "Temperature",
+        "group": "195258fbd880adcc",
+        "order": 3,
+        "value": "msg.payload.temperature",
+        "valueType": "msg",
+        "width": 3,
+        "height": 3,
+        "gtype": "gauge-half",
+        "gstyle": "needle",
+        "title": "Temperature",
+        "alwaysShowTitle": false,
+        "floatingTitlePosition": "top-left",
+        "units": "[℃]",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "0",
+                "color": "#ff0000",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "10",
+                "color": "#00ff00",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "45",
+                "color": "#ff0000",
+                "text": "",
+                "textType": "label"
+            }
+        ],
+        "min": "0",
+        "max": "80",
+        "sizeThickness": "12",
+        "sizeGap": 4,
+        "sizeKeyThickness": 8,
+        "styleRounded": true,
+        "styleGlow": false,
+        "className": "",
+        "x": 510,
+        "y": 320,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "14dad2542a83b7a1",
+        "type": "mqtt in",
+        "z": "df9f0f5e099aca5e",
+        "name": "",
+        "topic": "project/errors",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "0184e08155ca5db7",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 110,
+        "y": 800,
+        "wires": [
+            [
+                "308649f77599f992"
+            ]
+        ]
+    },
+    {
+        "id": "308649f77599f992",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "b38de9032725e564",
+        "order": 1,
+        "width": "4",
+        "height": "1",
+        "name": "Errors",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#000000",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 430,
+        "y": 800,
+        "wires": []
+    },
+    {
+        "id": "a5d73a06d34246ae",
+        "type": "mqtt in",
+        "z": "df9f0f5e099aca5e",
+        "name": "",
+        "topic": "project/status",
+        "qos": "0",
+        "datatype": "utf8",
+        "broker": "0184e08155ca5db7",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 110,
+        "y": 680,
+        "wires": [
+            [
+                "ec87177f4d9f615a",
+                "328e418321974e3d"
+            ]
+        ]
+    },
+    {
+        "id": "ec87177f4d9f615a",
+        "type": "function",
+        "z": "df9f0f5e099aca5e",
+        "name": "function 4",
+        "func": "let isOnline = msg.payload === 'online';\n\nmsg.payload = isOnline\n  ? 'ESP8266: ONLINE'\n  : 'ESP8266: OFFLINE — The displayed data may be outdated!';\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 680,
+        "wires": [
+            [
+                "7372d6acf1d28b1b"
+            ]
+        ]
+    },
+    {
+        "id": "7372d6acf1d28b1b",
+        "type": "ui-text",
+        "z": "df9f0f5e099aca5e",
+        "group": "5b2c2cfed776081d",
+        "order": 1,
+        "width": "8",
+        "height": "1",
+        "name": "Status",
+        "label": "",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": true,
+        "font": "Times New Roman,Times,serif",
+        "fontSize": "20",
+        "color": "#0a808f",
+        "wrapText": false,
+        "className": "",
+        "value": "payload",
+        "valueType": "msg",
+        "x": 770,
+        "y": 680,
+        "wires": []
+    },
+    {
+        "id": "328e418321974e3d",
+        "type": "ui-led",
+        "z": "df9f0f5e099aca5e",
+        "name": "",
+        "group": "5b2c2cfed776081d",
+        "order": 2,
+        "width": "1",
+        "height": "1",
+        "label": "",
+        "labelPlacement": "right",
+        "labelAlignment": "center",
+        "states": [
+            {
+                "value": "offline",
+                "valueType": "str",
+                "color": "#ff0000"
+            },
+            {
+                "value": "online",
+                "valueType": "str",
+                "color": "#00ff00"
+            }
+        ],
+        "allowColorForValueInMessage": false,
+        "shape": "circle",
+        "showBorder": false,
+        "showGlow": false,
+        "x": 410,
+        "y": 740,
+        "wires": []
+    },
+    {
+        "id": "1226e695783c7e27",
+        "type": "debug",
+        "z": "df9f0f5e099aca5e",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 620,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "0184e08155ca5db7",
+        "type": "mqtt-broker",
+        "name": "Home",
+        "broker": "192.168.1.22:1883",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "195258fbd880adcc",
+        "type": "ui-group",
+        "name": "Guage_group",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "9",
+        "height": "1",
+        "order": 1,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "b0aac6830f6940d3",
+        "type": "ui-group",
+        "name": "Alarms",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "9",
+        "height": 1,
+        "order": 5,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "be53c48b28fab8e8",
+        "type": "ui-group",
+        "name": "Voltage_measurement_group",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "3",
+        "height": 1,
+        "order": 2,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "4a107ca3f7bb1989",
+        "type": "ui-group",
+        "z": "df9f0f5e099aca5e",
+        "name": "Current_measurement_group",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "3",
+        "height": 1,
+        "order": 3,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "d7c767d1bb55513d",
+        "type": "ui-group",
+        "name": "Temperature_measurement_group",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "3",
+        "height": 1,
+        "order": 4,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "b38de9032725e564",
+        "type": "ui-group",
+        "name": "Errors",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "9",
+        "height": 1,
+        "order": 7,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "5b2c2cfed776081d",
+        "type": "ui-group",
+        "name": "Status",
+        "page": "b9c4d4eeb6c965ab",
+        "width": "9",
+        "height": 1,
+        "order": 6,
+        "showTitle": false,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "b9c4d4eeb6c965ab",
+        "type": "ui-page",
+        "name": "Gateway",
+        "ui": "25a64a025ff2b6be",
+        "path": "/page1",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "3fc478ddb173cc03",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "9"
+            }
+        ],
+        "order": 1,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "25a64a025ff2b6be",
+        "type": "ui-base",
+        "name": "My Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "3fc478ddb173cc03",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0094CE",
+            "bgPage": "#eeeeee",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    },
+    {
+        "id": "c9bbfdd6d5eaac5f",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "@flowfuse/node-red-dashboard": "1.30.2",
+            "@flowfuse/node-red-dashboard-2-ui-led": "1.1.0"
+        }
+    }
+]
