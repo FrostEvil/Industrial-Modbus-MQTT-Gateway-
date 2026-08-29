@@ -78,25 +78,20 @@ static uint8_t append_measurement_state_change(uint8_t measurement_bitmask,
  * Per-channel tracking is intentionally NOT updated during
  * ALARM_COMMUNICATION - values from before the failure are preserved and
  * compared again only once a valid measurement is available.
- */
-
-/*
- * NOTE: snprintf() returns how many characters it WOULD have written if
- * the buffer had been unlimited - not how many actually fit. At this
- * buffer size (192 B) and with these short, fixed messages, truncation
- * never happens in practice, so `len` is always accurate here. If this
- * buffer ever shrinks or the messages grow, `len` could end up larger
+ *
+ * NOTE: snprintf() returns how many characters it WOULD have written if the
+ * buffer had been unlimited, not how many actually fit. At this buffer size
+ * (TX_BUFFER_SIZE = 64 B) and with these short, fixed message fragments,
+ * truncation never happens in practice, so `len` below stays accurate. If
+ * this buffer ever shrinks or the messages grow, `len` could end up larger
  * than what's really in the buffer, and `uart6_tx_buffer + len` /
- * `TX_BUFFER_SIZE - len` (unsigned!) would then point/compute
- * out of bounds. Worth clamping `len` to `TX_BUFFER_SIZE - 1`
- * after each snprintf() if that ever becomes a real risk.
+ * `TX_BUFFER_SIZE - len` (unsigned!) would then point/compute out of
+ * bounds. Worth clamping `len` to `TX_BUFFER_SIZE - 1` after each
+ * snprintf() if that ever becomes a real risk.
  */
 static void send_uart_alarm_state(const MqttAlarmState_t *mqtt_alarm_state,
 		uint8_t *prev_measurement_bitmask) {
-	/*
-	 * NOTE: snprintf() returns how many characters it WOULD have written...
-	 * (patrz komentarz wyżej)
-	 */
+
 	uint8_t len = snprintf(uart6_tx_buffer,
 	TX_BUFFER_SIZE, "E");
 
