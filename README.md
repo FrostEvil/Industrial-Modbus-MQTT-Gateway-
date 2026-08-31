@@ -193,7 +193,7 @@ the wiring diagram below for the exact physical connections.
 
 ### Wiring diagram and physical build
 
-![Physical build: Nucleo-F401RE, breadboard with Flash and status LEDs, ESP8266, Arduino Uno](Hardware/hardware-setup.JPG)
+![Physical build: Nucleo-F401RE, breadboard with Flash and status LEDs, ESP8266, Arduino Uno](hardware/hardware-setup.JPG)
 
 The full wiring diagram (`hardware/schematic.pdf`, drawn in KiCad) documents
 every connection shown in the photo above: both MAX3485 RS-485
