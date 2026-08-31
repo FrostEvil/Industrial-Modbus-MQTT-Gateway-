@@ -69,6 +69,7 @@ for reading or erasing that log without touching the main data path.
 │   └── Src/                    # Source
 ├── arduino-modbus-simulator/   # Arduino sketch simulating the Modbus slave
 ├── esp8266-mqtt-bridge/        # ESP8266 UART↔MQTT bridge firmware
+├── hardware/                   # KiCad-exported schematic + build photo
 └── node-red-dashboard/         # Dashboard screenshots + full flow export (flows.json)
 ```
 
@@ -187,8 +188,60 @@ diagnostic messages (`Error_Handler()` notifications, stack overflow
 reports, Flash status messages).
 
 `USART1` (RS-485/Modbus) and `SPI2` (external Flash) pin assignments are
-configured via STM32CubeMX and aren't reproduced here — refer to your own
-board's pinout when wiring the hardware.
+configured via STM32CubeMX and aren't reproduced here as a pin table — see
+the wiring diagram below for the exact physical connections.
+
+### Wiring diagram and physical build
+
+![Physical build: Nucleo-F401RE, breadboard with Flash and status LEDs, ESP8266, Arduino Uno](hardware/hardware-setup.jpg)
+
+The full wiring diagram (`hardware/schematic.pdf`, drawn in KiCad) documents
+every connection shown in the photo above: both MAX3485 RS-485
+transceivers (one per end of the bus, mirroring each other), the SPI Flash
+wiring described earlier in this section, the status LEDs, and the ESP8266
+link. It's a wiring/interconnection diagram for the dev boards used here
+(Nucleo, NodeMCU, Arduino Uno, breakout modules) rather than a custom PCB
+layout.
+
+**RS-485 termination and bias resistors.** The bus uses a single 100Ω
+termination resistor and 470Ω bias (pull-up/pull-down) resistors, rather
+than the more commonly cited 120Ω / 390Ω values. Both choices are
+deliberate for this specific setup, not oversights:
+
+- **Termination** matters once a cable's round-trip propagation delay
+  becomes a meaningful fraction of the transceiver's signal rise/fall time
+  (a few ns for a fast part like the MAX3485) — not a function of baud rate
+  alone. At the ~20cm bench length used here, round-trip delay is on the
+  order of 2ns, well below that threshold, so termination isn't strictly
+  necessary yet. It's included anyway (at one end rather than both) since
+  it costs nothing at this length and keeps the board closer to correct
+  RS-485 practice if the cable is ever extended.
+- **Bias resistors** solve an unrelated problem — keeping the idle-bus
+  differential voltage above the receiver's guaranteed 200mV threshold —
+  and this one *does* depend on the actual resistor values, independent of
+  cable length:
+
+  `V_AB = VCC × R_term / (2·R_bias + R_term)`
+
+  With this setup (R_term = 100Ω, R_bias = 470Ω, VCC = 3.3V):
+  V_AB ≈ 3.3 × 100 / (940 + 100) ≈ 317mV — comfortably above the 200mV
+  MAX3485 receiver sensitivity spec.
+
+For a longer or noisier run, two termination resistors (one at each
+physical end of the bus) become the correct choice — but two 120Ω
+resistors in parallel present only 60Ω, not 120Ω, to the bias resistors,
+which changes the sizing:
+
+`V_AB ≈ 3.3 × 60 / (2·R_bias + 60)`
+
+390Ω here only yields ≈236mV (a thin margin over the 200mV spec once
+resistor tolerance and supply variation are considered) — 330Ω is a better
+match for this specific topology, giving ≈275mV.
+
+| Setup | Termination | Bias resistors | V_AB |
+|---|---|---|---|
+| This build (short bench cable) | 1× 100Ω | 470Ω | ≈317 mV |
+| Recommended for longer cable runs | 2× 120Ω (one per end) | 330Ω | ≈275 mV |
 
 ## Arduino Modbus slave simulator
 
@@ -316,6 +369,9 @@ E,[SPI=<COMMUNICATION|STORAGE>,]S=<NORMAL|MEASUREMENT|COMMUNICATION>[,<channel>=
 ## Getting started
 
 ### Hardware
+
+See `hardware/schematic.pdf` for the exact wiring between every board,
+transceiver, and the Flash chip before connecting anything.
 
 - An STM32F401-based board (Nucleo-64 form factor) with an ST-Link
   debugger.
