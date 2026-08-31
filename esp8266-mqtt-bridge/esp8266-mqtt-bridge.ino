@@ -43,7 +43,7 @@ const char* pass = "YOUR_WIFI_PASSWORD";
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-IPAddress server(192, 168, 1, 100);  // set this to your own MQTT broker's IP
+IPAddress server("YOUR_MQTT_IP");  // set this to your own MQTT broker's IP
 const int mqtt_port = 1883;
 
 const char* mqtt_client_id = "esp8266-project1";  // must be unique among all clients connected to this broker
